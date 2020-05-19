@@ -1,0 +1,1 @@
+/usr/bin/c++  -std=c++11 -faligned-new -O2 -Wall -fPIC   -rdynamic CMakeFiles/solution.dir/solution/parse_bc3.cc.o  -o solution -Wl,-rpath,/mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/build ../libboost.so -ldl 

@@ -68,7 +68,7 @@ class Ref {
     template<typename U, typename std::enable_if<std::is_base_of<T, U>::value>::type* = nullptr>
     Ref(std::shared_ptr<U> _ptr) : ptr(_ptr) {}
 
-    bool defined() const { return ptr != nullptr; }
+    bool defined() { return ptr != nullptr; }
 
     T *get() const { return ptr.get(); }
 
@@ -379,10 +379,10 @@ class Expr : public Ref<const ExprNode> {
     Expr(double value) :
         Ref<const ExprNode>(FloatImm::make(Type::float_scalar(64), value)) {}
 
-    Expr &operator=(const Expr &other) {
-        this->set_ptr(other.real_ptr());
-        return *this;
-    }
+	Expr& operator=(const Expr& other){
+		this->set_ptr(other.real_ptr());
+		return *this;
+	}
 
     IRNodeType node_type() const {
         return this->get()->node_type();
