@@ -444,6 +444,7 @@ bool test_case10(std::mt19937 &gen, std::uniform_real_distribution<float> &dis) 
     for (int i = 0; i < 10; ++i) {
         for (int j = 0; j < 8; ++j) {
             golden[i][j] = ((i >= 0 && i < 8 ? dA[i][j] : 0.0) + (i >= 1 && i < 9 ? dA[i-1][j] : 0.0) + (i >= 2 && i < 10 ? dA[i-2][j] : 0.0)) / 3.0;
+      
         }
     }
     try {

@@ -52,6 +52,7 @@ public:
     std::string outstr;
     std::string data_type;
     std::string kernel;
+    std::string grad_to;
     Case(){};
     Case(const std::vector<std::string> & m){
         int i = 0;
@@ -64,7 +65,10 @@ public:
                 outs = handle(m[i]);
             }
             else if(i == 3) data_type = m[i];
-            else{ kernel = m[i];}
+            else if(i==4){ kernel = m[i];}
+            else{
+                grad_to = m[i];
+            }
         }
     }
     std::vector<std::string> handle(const std::string& m){

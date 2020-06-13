@@ -21,7 +21,11 @@ using namespace Boost::Internal;
 
 const int INF = 64;
 
-//  比较两个字符转是否相同。（忽略空格）
+//HJH:
+std::vector<std::string> grad_to;
+std::map<std::string, Expr> grad_to_expr;
+
+//  比较两个字符串是否相同。（忽略空格）
 bool compare_str(const std::string &s1, const std::string &s2)
 {
     int i = 0, j = 0;
@@ -68,6 +72,7 @@ public:
     std::string outstr;
     std::string data_type;
     std::string kernel;
+    
     Case(){};
     Case(const std::vector<std::string> &m)
     {
@@ -86,9 +91,12 @@ public:
             }
             else if (i == 3)
                 data_type = m[i];
-            else
+            else if(i==4)
             {
                 kernel = m[i];
+            }
+            else{
+                grad_to = handle(m[i]);
             }
         }
     }
@@ -111,6 +119,7 @@ public:
         std::cout << name << std::endl;
         std::cout << data_type << std::endl;
         std::cout << kernel << std::endl;
+        
         for (int i = 0; i < ins.size(); ++i)
             std::cout << ins[i] << " ";
         std::cout << std::endl;
@@ -121,7 +130,7 @@ public:
     }
 };
 
-// 分析jison，并把信息填入case
+// 分析json，并把信息填入case
 Case parse_json(std::string src)
 {
     std::ifstream ifile(src, std::ios::in);
@@ -141,7 +150,7 @@ Case parse_json(std::string src)
         int pos = tmp.find(":");
         tmp = tmp.substr(pos + 1);
         int pos1 = -1, pos2 = -1;
-        if (colcnt == 1 || colcnt == 2)
+        if (colcnt == 1 || colcnt == 2 || colcnt == 5)
         {
             pos1 = tmp.find_first_of("[");
             pos2 = tmp.find_last_of("]");
@@ -162,6 +171,8 @@ Case parse_json(std::string src)
 }
 
 Case example;
+
+
 
 /* 0P 1S 2LHS 3RHS 4TRef 5SRef 6Const 7CList 8AList 9 Op 10 IdExpr 11 Id
  * 定义节点的类型
@@ -196,8 +207,9 @@ std::map<std::string, Expr> loop_indexs;
 std::map<std::string, Expr> inputs;
 std::map<std::string, Expr> outputs;
 
+
 // 等式整体的bandcheck。
-std::map<std::string, int> bandcheck_dom;
+std::map<std::string, int> bandcheck_dom; //Q: begin=0?
 std::map<std::string, Expr> bandcheck_expr;
 
 class AST;
@@ -241,6 +253,7 @@ public:
     void build_tree()
     {
         // 如果是右值节点且有儿子
+        //t==3: RHS
         if (t == 3 && child.size() > 0)
             ;
         else
@@ -524,7 +537,7 @@ public:
         child.back().father = this;
     }
 
-    // 生成CList, 子节点是向量字母参数。
+    // 生成AList, 子节点是向量字母参数。
     void build_AList()
     {
         int i = 0;
@@ -574,6 +587,7 @@ public:
                 }
                 tmp = str.substr(i, s1 - i);
                 ch = AST((nodetype)10, tmp); // Id
+                //Q 10:IdExpr, 11:Id?
                 v2.push_back(ch);
                 i = s1;
             }
@@ -826,8 +840,14 @@ public:
         a = IfThenElse::make(cond_temp, important_body, fake_stmt);
 
         body_list.push_back(a);
-
-        Stmt A = LoopNest::make(loop_indexs, body_list);
+        
+        //HJH    
+        std::vector<Expr> loop_indexs_vec;
+        for (std::map<std::string, Expr>::iterator i = loop_indexs.begin(); i != loop_indexs.end(); ++i)
+        {
+            loop_indexs_vec.push_back(i->second);
+        }
+        Stmt A = LoopNest::make(loop_indexs_vec, body_list);
         sp.push_back(A);
         //-------------------
         //std::cout << "loop index in S " << tmp.size() << std::endl;
@@ -972,6 +992,13 @@ public:
             if (inputs.find(sname) == inputs.end())
                 inputs[sname] = ep;
         }
+        //HJH
+        for(int i=0;i<grad_to.size();++i){
+            if(compare_str(sname, grad_to[i])){
+                grad_to_expr[sname]=ep;
+                break;
+            }
+        }
     }
 
     // 处理张量
@@ -1034,6 +1061,13 @@ public:
             if (inputs.find(tname) == inputs.end())
                 inputs[tname] = ep;
         }
+        //HJH
+        for(int i=0;i<grad_to.size();++i){
+            if(compare_str(tname, grad_to[i])){
+                grad_to_expr[tname]=ep;
+                break;
+            }
+        }
     }
 
     void IR_CList()
@@ -1048,7 +1082,7 @@ public:
     {
         Expr dom_inf = Dom::make(index_type, -INF, 2 * INF); // 默认的下标的范围
         
-        // 对于有儿子的节点，本届点的ep就是把子节点的ep合起来。
+        // 对于有儿子的节点，本节点的ep就是把子节点的ep合起来。
         if (child.size())
         {
             Expr ch1 = Expr(child[0].ep);
@@ -1126,14 +1160,16 @@ public:
 };
 
 // todo: 从右边值节点开始递归求微分。
-void find_dx(AST *RHS, int p_or_n)
+Expr find_dx(AST *RHS, int p_or_n)
 {
     
 }
 
 int main(int argc, char *argv[])
 {
-    std::string src = "./cases/example.json";
+    //HJH 
+    //std::string src = "./cases/examples.json"; 
+    std::string src = "./cases/case1.json";
     example = parse_json(src);
     
     example.print();

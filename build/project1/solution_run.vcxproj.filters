@@ -1,0 +1,23 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="16.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="D:\codes\CompilerLab\Compiler_Project\CompilerProject-2020Spring\build\CMakeFiles\d75e837c86f4b5b3ab77f8bbcdfeb6c6\solution_run.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="D:\codes\CompilerLab\Compiler_Project\CompilerProject-2020Spring\project1\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="D:\codes\CompilerLab\Compiler_Project\CompilerProject-2020Spring\build\project1\CMakeFiles\solution_run" />
+    <None Include="D:\codes\CompilerLab\Compiler_Project\CompilerProject-2020Spring\project1\solution\parse_bc3.cc">
+      <Filter>Source Files</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{67CAFF87-23BD-3969-8D50-D04EE78A8464}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{AB48CE6F-5174-3D50-9937-0F284581179B}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

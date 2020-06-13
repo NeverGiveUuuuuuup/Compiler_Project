@@ -2,7 +2,7 @@
 ----------------------------------
 ## 0. 小组成员及分工
 - 尹子昊：Parse Json Input、Form IR Tree、最终测试（对应报告2.1、2.2.1、2.2.2）
-- 王育民：Bandcheck、生成加减项并组装成最后的S（对应报告2.2.3、3.2）
+- 王育民：boundcheck、生成加减项并组装成最后的S（对应报告2.2.3、3.2）
 - 韩佳衡：后端实现，将抽象语法树翻译为目标代码，代码是CCPrinter.cc和CCPrinter.h（对应于报告2.3、3.1）
 - 徐德民：参与讨论，造case测试，与助教沟通询问项目存在问题。
 
@@ -51,7 +51,7 @@ Const ::= FloatV | IntV
 ### 1.3 解决思路
 分以下三步
 - Parse Input Json Files
-  - 记录对应case的名字，输入输入的Id， 数据类型以及要分析的语句
+  - 记录对应case的名字，输入输出的Id， 数据类型以及要分析的语句
   - 完成词法分析
 - Form IR Tree
   - 根据词法分析结果进行语法分析
@@ -59,7 +59,7 @@ Const ::= FloatV | IntV
   - 设计SDD和SDT，对应节点完成对应的生成中间代码工作
   - 必要时调用IR Visitor获取节点信息，调用IR Mutator更改信息（Project1用不到）
 - Generate C/C++ source code
-  - 重新实现一个IR Printer的子类CCPrinter
+  - 重新实现一个IRVisitor的子类CCPrinter
   - 遍历上述语法树的同时，打印出C/C++源码
 
 
@@ -120,7 +120,7 @@ enum nodetype {P, S, LHS, RHS, TRef, SRef, Const, CList, AList, Op, IdExpr, Id};
 - 指针ep, gp以及Statement的数组sp在后续SDT中用到。
 
 #### 2.2.2 design SDT
-对上述建成的AST进行后续遍历，待子节点make出对应的IR节点，再利用子节点的结果完成自身的make。同时对于boundcheck等有关index范围的工作，还需要查看兄弟节点信息。
+对上述建成的AST进行后序遍历，待子节点make出对应的IR节点，再利用子节点的结果完成自身的make。同时对于boundcheck等有关index范围的工作，还需要查看兄弟节点信息。
 - P: 每条S make成功即可。
 - S：先声明一个temp数组，之后完成temp = 0, 每个最外层加减项的loop, LHS = temp的make，最后嵌套入LHS对应index的最外层Loop。
 - LHS：等待儿子节点TRef的make，然后再make自身。
@@ -129,26 +129,26 @@ enum nodetype {P, S, LHS, RHS, TRef, SRef, Const, CList, AList, Op, IdExpr, Id};
 - SRef: CList（“<1>”）make后，完成Var::make(shape是{1}, index为空)
 - CList: 每个index的upper bound，make成一个Expr(int)
 - AList: 查看兄弟节点CList中信息，推断出上下界，完成Dom::make
-####  2.2.3 bandcheck
+####  2.2.3 boundcheck
 
-在后续遍历的同时我们也可以实现bandcheck。主要思路：后续遍历的时候在树的低层（TRef节点）收集它的儿子也就是Alist和Clist的信息，并把每个index（包括复合的index，例如i + j）的str、expr、和范围存入本节点的成员bandcheck_list和bandcheck_value中，这是两个map。相同的index的范围取小的那个。同时也维护了叫做expr_index_list的map(`std::map<std::string, Expr>`)存入当前节点中所有index的str和expr(与前者不同在于它只存单个的index，例如是 \[`i` + `j`\] 的话，map里面是\[`i`\]和\[`j`\]两个index）。这个结构是为了之后在后序遍历到节点S构造加减项的时候提供信息，因为加减项遍历的的index是加减项本身有但是LHS中没有的index。
+在后序遍历的同时我们也可以实现boundcheck。主要思路：后序遍历的时候在树的低层（TRef节点）收集它的儿子也就是Alist和Clist的信息，并把每个index（包括复合的index，例如i + j）的str、expr、和范围存入本节点的成员boundcheck_list和boundcheck_value中，这是两个map。相同的index的范围取小的那个。同时也维护了叫做expr_index_list的map(`std::map<std::string, Expr>`)存入当前节点中所有index的str和expr(与前者不同在于它只存单个的index，例如是 \[`i` + `j`\] 的话，map里面是\[`i`\]和\[`j`\]两个index）。这个结构是为了之后在后序遍历到节点S构造加减项的时候提供信息，因为加减项遍历的的index是加减项本身有但是LHS中没有的index。
 
 ```c++
 //***类AST中的public成员
-std::map<std::string, Expr> bandcheck_list;
-std::map<std::string, int> bandcheck_value;
+std::map<std::string, Expr> boundcheck_list;
+std::map<std::string, int> boundcheck_value;
 
-//***Tref中搜集儿子信息构造bandcheck_list和bandcheck_value
+//***Tref中搜集儿子信息构造boundcheck_list和boundcheck_value
 std::map<std::string, Expr>::iterator j;
 for(int i = 0; i < child[2].child.size(); ++i){
-//把Alist中的所有儿子的str和ep存入bandcheck_list，用于加减项的bandcheck
-	if(bandcheck_list.find(child[2].child[i].str) == bandcheck_list.end()) {
-    	bandcheck_list[child[2].child[i].str] = child[2].child[i].ep;
-    	bandcheck_value[child[2].child[i].str] = int(child[1].child[i].value);
-	} else if (bandcheck_value[child[2].child[i].str] > int(child[1].child[i].value)）
+//把Alist中的所有儿子的str和ep存入boundcheck_list，用于加减项的boundcheck
+	if(boundcheck_list.find(child[2].child[i].str) == boundcheck_list.end()) {
+    	boundcheck_list[child[2].child[i].str] = child[2].child[i].ep;
+    	boundcheck_value[child[2].child[i].str] = int(child[1].child[i].value);
+	} else if (boundcheck_value[child[2].child[i].str] > int(child[1].child[i].value)）
     {
         //如果是相同的index且限制的范围更小则更改value
-    	bandcheck_value[child[2].child[i].str] = int(child[1].child[i].value);
+    	boundcheck_value[child[2].child[i].str] = int(child[1].child[i].value);
 	}
 	// 把Alist中的所有儿子的expr_index_list合并存入expr_index_list
 	for (j = child[2].child[i].expr_index_list.begin();j != child[2].child[i].expr_index_list.end();++j) {
@@ -156,48 +156,48 @@ for(int i = 0; i < child[2].child.size(); ++i){
 	}
 }
 
-//***把RHS儿子的bandcheck_list和bandcheck_value合并给自己
+//***把RHS儿子的boundcheck_list和boundcheck_value合并给自己
 if(child.size() == 3) {
-    // bandcheck_list
-    for (std::map<std::string, Expr>::iterator i = child[0].bandcheck_list.begin(); i != child[0].bandcheck_list.end();++i) {
-        if(bandcheck_list.find(i->first) == bandcheck_list.end()) {
-            bandcheck_list[i->first] = i->second;
+    // boundcheck_list
+    for (std::map<std::string, Expr>::iterator i = child[0].boundcheck_list.begin(); i != child[0].boundcheck_list.end();++i) {
+        if(boundcheck_list.find(i->first) == boundcheck_list.end()) {
+            boundcheck_list[i->first] = i->second;
         }
     }
-    for (std::map<std::string, Expr>::iterator i = child[2].bandcheck_list.begin(); i != child[2].bandcheck_list.end();++i) {
-        if(bandcheck_list.find(i->first) == bandcheck_list.end()) {
-            bandcheck_list[i->first] = i->second;
+    for (std::map<std::string, Expr>::iterator i = child[2].boundcheck_list.begin(); i != child[2].boundcheck_list.end();++i) {
+        if(boundcheck_list.find(i->first) == boundcheck_list.end()) {
+            boundcheck_list[i->first] = i->second;
         }
     }
-    //bandcheck_value
-    for (std::map<std::string, int>::iterator i = child[0].bandcheck_value.begin(); i != child[0].bandcheck_value.end();++i) {
-        if(bandcheck_value.find(i->first) == bandcheck_value.end()) {
-            bandcheck_value[i->first] = i->second;
+    //boundcheck_value
+    for (std::map<std::string, int>::iterator i = child[0].boundcheck_value.begin(); i != child[0].boundcheck_value.end();++i) {
+        if(boundcheck_value.find(i->first) == boundcheck_value.end()) {
+            boundcheck_value[i->first] = i->second;
             //std::cout << "((((((((((((((()))))))))))))" << i->second << std::endl;
         }
     }
-    for (std::map<std::string, int>::iterator i = child[2].bandcheck_value.begin(); i != child[2].bandcheck_value.end();++i) {
-        if(bandcheck_value.find(i->first) == bandcheck_value.end()) {
-            bandcheck_value[i->first] = i->second;
+    for (std::map<std::string, int>::iterator i = child[2].boundcheck_value.begin(); i != child[2].boundcheck_value.end();++i) {
+        if(boundcheck_value.find(i->first) == boundcheck_value.end()) {
+            boundcheck_value[i->first] = i->second;
             //std::cout << "((((((((((((((()))))))))))))" << i->second << std::endl;
         }
     }
 } else {
-    for (std::map<std::string, Expr>::iterator i = child[0].bandcheck_list.begin(); i != child[0].bandcheck_list.end();++i) {
-        if(bandcheck_list.find(i->first) == bandcheck_list.end()) {
-            bandcheck_list[i->first] = i->second;
+    for (std::map<std::string, Expr>::iterator i = child[0].boundcheck_list.begin(); i != child[0].boundcheck_list.end();++i) {
+        if(boundcheck_list.find(i->first) == boundcheck_list.end()) {
+            boundcheck_list[i->first] = i->second;
         }
     }
-    //bandcheck_value
-    for (std::map<std::string, int>::iterator i = child[0].bandcheck_value.begin(); i != child[0].bandcheck_value.end();++i) {
-        if(bandcheck_value.find(i->first) == bandcheck_value.end()) {
-            bandcheck_value[i->first] = i->second;
+    //boundcheck_value
+    for (std::map<std::string, int>::iterator i = child[0].boundcheck_value.begin(); i != child[0].boundcheck_value.end();++i) {
+        if(boundcheck_value.find(i->first) == boundcheck_value.end()) {
+            boundcheck_value[i->first] = i->second;
         }
     }
 }
 ```
 
-在TRef的父辈节点——S、LHS、RHS节点中，我们就把其儿子节点的bandcheck_list和bandcheck_value合并来作为本节点的bandcheck_list和bandcheck_value。这样TRef以上所有节点中的bandcheck_list和bandcheck_value就表示了本身节点构造bandcheck所需要的index和范围信息。expr_index_list也是一样的操作。之后接着的就是在树的S节点进行构造构造加减项、bandcheck等操作。即在AST类的成员函数void IR_S()中。
+在TRef的父辈节点——S、LHS、RHS节点中，我们就把其儿子节点的boundcheck_list和boundcheck_value合并来作为本节点的boundcheck_list和boundcheck_value。这样TRef以上所有节点中的boundcheck_list和boundcheck_value就表示了本身节点构造boundcheck所需要的index和范围信息。expr_index_list也是一样的操作。之后接着的就是在树的S节点进行构造构造加减项、boundcheck等操作。即在AST类的成员函数void IR_S()中。
 
 ### 2.3 Generate C/C++ source code
 
@@ -244,7 +244,7 @@ std::string print(const Group&);
 ```
 如果按照最初的参数列表实现方法——依次将ins和outs打印出来——那么在上述例子中，参数A将会重复出现。因此需要在打印参数之前对参数列表进行去重，也就是说前面出现过的后面就不要再打印出来了。
 
-明白了任务要求，其实实现起来很简单。构造了一个
+明白了任务要求，实现起来很简单。构造了一个
 ```c++
 std::vector<std::string> inputnames
 ```
@@ -292,7 +292,7 @@ for(index of LHS) {
 
 首先我们得把S中所有得加减项找出来，我们在IR_S中调用函数find_item(&(child[1]), 0);0表示当前这个节点外面是正的，如果是1则表示为负，这个函数会从树上的这个S节点的RHS子节点(对应传入的是child[1]的指针)出发开始找加减项，并把找到的加减项存入全局变量for_temp_list（这是一个vector）中，IR_S构建完之后会清空这个vector以免影响下一个S的构造。找加减项的主要思路是递归，如果当前节点有三个儿子，即可被分解为A op B，若op是\*或者/号，当前这个节点就是一个加减项，我们把它压入for_temp_list。如果操作符号op是\+或者\-号，那我们继续find_item()下面的两个儿子，左儿子的正负为本节点的正负，右儿子的正负是op的正负。我们find_item(这个儿子)的时候，如果发现这个儿子只有一个儿子，即它不能在被分解，它也是一个加减项，不用再继续向下找。否则向上面一样再判断op。（大概思路是这样，还有一些特殊情况的判断具体看代码。比如当前节点如果有括号包住，那它不管是什么也算一个加减项，还有右值可能直接是一个Const等等）
 
-找到加减项目之后生成一个结构，压入for_temp_list（vector）中，存入的信息包括，节点的str，expr，for循环涉及到的index信息、bandcheck涉及到的index信息、这个加减项节点的类型、这个加减项的正负。
+找到加减项目之后生成一个结构，压入for_temp_list（vector）中，存入的信息包括，节点的str，expr，for循环涉及到的index信息、boundcheck涉及到的index信息、这个加减项节点的类型、这个加减项的正负。
 
 ```c++
 void find_item(AST *RHS, int p_or_n) {
@@ -309,18 +309,18 @@ void find_item(AST *RHS, int p_or_n) {
                 find_item(&(RHS->child[2]), 1);
             }
             else {
-                Temp_for temp(RHS->str, p_or_n, RHS->ep, RHS->expr_index_list, RHS->t, RHS->bandcheck_list, RHS->bandcheck_value);
+                Temp_for temp(RHS->str, p_or_n, RHS->ep, RHS->expr_index_list, RHS->t, RHS->boundcheck_list, RHS->boundcheck_value);
                 for_temp_list.push_back(temp);
             }
         } else {
-            Temp_for temp(RHS->str, p_or_n, RHS->ep, RHS->expr_index_list, RHS->t, RHS->bandcheck_list, RHS->bandcheck_value);
+            Temp_for temp(RHS->str, p_or_n, RHS->ep, RHS->expr_index_list, RHS->t, RHS->boundcheck_list, RHS->boundcheck_value);
             for_temp_list.push_back(temp);
         }
     }
     else {
         if (RHS->t == 4 || RHS->t == 5 || RHS->t == 6 )
         {
-            Temp_for temp(RHS->str, p_or_n, RHS->ep, RHS->expr_index_list, RHS->t, RHS->bandcheck_list, RHS->bandcheck_value);
+            Temp_for temp(RHS->str, p_or_n, RHS->ep, RHS->expr_index_list, RHS->t, RHS->boundcheck_list, RHS->boundcheck_value);
             for_temp_list.push_back(temp);
         } else {
         	find_item(&(RHS->child[0]), p_or_n);
