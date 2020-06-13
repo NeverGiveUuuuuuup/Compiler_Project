@@ -1160,16 +1160,19 @@ public:
 };
 
 // todo: 从右边值节点开始递归求微分。
-
-Expr find_dx(AST *RHS){//not completed
+Expr find_dx(AST *RHS){
     if(RHS.child.size()==3){
         Expr ch1 = RHS.child[0].ep;Expr ch2 = RHS.child[2].ep;
-        if(RHS.child[1].str=="+")return Binary::make(data_type, BinaryOpType::Add,find_dx(ch1),find_dx(ch2));
-        if(RHS.child[1].str=="-")return Binary::make(data_type, BinaryOpType::Sub,find_dx(ch1),find_dx(ch2));
-        if(RHS.child[1].str=="*")return Binary::make(data_type, BinaryOpType::Add,
-            Binary::make(data_type,BinaryOpType::Mul,find_dx(ch1),ch2),Binary::make(data_type, BinaryOpType::Mul, ch1,find_dx(ch2)));
+        if(RHS.child[1].str=="+")return Binary::make(data_type,BinaryOpType::Add,find_dx(ch1),find_dx(ch2));
+        if(RHS.child[1].str=="-")return Binary::make(data_type,BinaryOpType::Sub,find_dx(ch1),find_dx(ch2));
+        if(RHS.child[1].str=="*")return Binary::make(data_type,BinaryOpType::Add,
+            Binary::make(data_type,BinaryOpType::Mul,find_dx(ch1),ch2),Binary::make(data_type, BinaryOpType::Mul,ch1,find_dx(ch2)));
         if(RHS.child[1].str=="/")return Binary::make(data_type, BinaryOpType::Div,find_dx(ch1),ch2);
         }
+    int i;
+    for(i=0;i<grad_to.size();i++)
+        if(compare_str(RHS.child[0].str,grad_to[i]))return 1;
+    return 0;
 }
 int main(int argc, char *argv[])
 {
