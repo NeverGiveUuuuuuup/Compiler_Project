@@ -1126,9 +1126,14 @@ public:
 };
 
 // todo: 从右边值节点开始递归求微分。
-void find_dx(AST *RHS, int p_or_n)
-{
-    
+Expr find_dx(AST *RHS){
+    if(child.size()==3){
+        Expr ch1 = Expr(child[0].ep);Expr ch2 = Expr(child[2].ep);
+        if(child[1].str=="+")return Binary::make(data_type, BinaryOpType::Add,find_dx(ch1),find_dx(ch2));
+        if(child[1].str=="-")return Binary::make(data_type, BinaryOpType::Sub,find_dx(ch1),find_dx(ch2));
+        if(child[1].str=="*")return Binary::make(data_type, BinaryOpType::Add,Binary::make(data_type,BinaryOpType::Mul,find_dx(ch1),ch2),Binary::make(data_type, BinaryOpType::Mul, ch1,find_dx(ch2)));
+        if(child[1].str=="/")return Binary::make(data_type, BinaryOpType::Div,find_dx(ch1),ch2);
+        }
 }
 
 int main(int argc, char *argv[])
