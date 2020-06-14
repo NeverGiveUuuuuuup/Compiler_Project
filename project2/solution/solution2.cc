@@ -845,7 +845,7 @@ public:
             String str_dA = "d" + example.outs[0];
             Expr dA = Expr(str_dA);//error
             //"B"
-            Expr B = find_dx(child[1]);
+            Expr B = find_dx(&child[1]);
             // lhs = lhs + dA * B
             Expr rhs = Binary::make(data_type, BinaryOpType::Add, lhs,  
                             Binary::make(data_type, BinaryOpType::Mul, dA, B));            
@@ -1182,11 +1182,11 @@ Expr find_dx(AST *RHS){
     if(RHS->child.size()==3){
         AST ch1a = RHS->child[0], ch2a = RHS->child[2];
         Expr ch1 = ch1a.ep;Expr ch2 = ch2a.ep;
-        if(RHS->child[1].str=="+")return Binary::make(data_type,BinaryOpType::Add,find_dx(ch1a),find_dx(ch2a));
-        if(RHS->child[1].str=="-")return Binary::make(data_type,BinaryOpType::Sub,find_dx(ch1a),find_dx(ch2a));
+        if(RHS->child[1].str=="+")return Binary::make(data_type,BinaryOpType::Add,find_dx(&ch1a),find_dx(&ch2a));
+        if(RHS->child[1].str=="-")return Binary::make(data_type,BinaryOpType::Sub,find_dx(&ch1a),find_dx(&ch2a));
         if(RHS->child[1].str=="*")return Binary::make(data_type,BinaryOpType::Add,
-            Binary::make(data_type,BinaryOpType::Mul,find_dx(ch1a),ch2),Binary::make(data_type, BinaryOpType::Mul,ch1,find_dx(ch2a)));
-        if(RHS->child[1].str=="/")return Binary::make(data_type, BinaryOpType::Div,find_dx(ch1a),ch2);
+            Binary::make(data_type,BinaryOpType::Mul,find_dx(&ch1a),ch2),Binary::make(data_type, BinaryOpType::Mul,ch1,find_dx(&ch2a)));
+        if(RHS->child[1].str=="/")return Binary::make(data_type, BinaryOpType::Div,find_dx(&ch1a),ch2);
         }
         System.out.println("not implemented yet.");
         return NULL;
