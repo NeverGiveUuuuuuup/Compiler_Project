@@ -21,10 +21,13 @@ using namespace Boost::Internal;
 
 const int INF = 64;
 
-//HJH:
-std::vector<std::string> grad_to;
-std::map<std::string, Expr> grad_to_expr;
-std::string current_grad_to;
+//HJH 这些是我补充的要用到的变量:
+std::vector<std::string> grad_to; //里面是从json中读取出来的求导对象，例如"A", "B"
+std::map<std::string, Expr> grad_to_expr; //对每个求导对象建立一个Var（见IR_Tref, IR_SRef有关代码）
+std::string current_grad_to;//针对当前求导对象来进行求导
+bool more_occur=false;//判断是否是case10，在右值中出现多个B
+std::vector<Expr> grad_to_more_occur;//多个B的表达式，例如B[i+1][j], B[i-1][j]等，要分别生成求导式子。对应的string就是"d"+grad_to[0]
+Expr dout;//对输出对象的求导
 
 //  比较两个字符串是否相同。（忽略空格）
 bool compare_str(const std::string &s1, const std::string &s2)
@@ -837,26 +840,41 @@ public:
             //sp.push_back();
             
             //HJH: 循环体改成我们的 dx = dA * B
-            //todo: 针对dx和dA来make一个Expr
-            //"dx"
-            String str_lhs = "d" + current_grad_to;
-            Expr lhs = Expr(str_lhs);//error
-            //"dA"
-            String str_dA = "d" + example.outs[0];
-            Expr dA = Expr(str_dA);//error
-            //"B"
-            Expr B = find_dx(&child[1]);
-            // lhs = lhs + dA * B
-            Expr rhs = Binary::make(data_type, BinaryOpType::Add, lhs,  
-                            Binary::make(data_type, BinaryOpType::Mul, dA, B));            
-                                    
-            Stmt important_body = Move::make(lhs, rhs, MoveType::MemToMem);
-
-            // 加上bandchek
-            Stmt a;
-            a = IfThenElse::make(cond_temp, important_body, fake_stmt);
-            body_list.push_back(a);
             
+            //"dx" todo:这里没有考虑more_occr=true的情况
+            if(more_occur==false){
+                Expr lhs = grad_to_expr["d"+current_grad_to];
+                //"dA"
+                Expr dA = dout;
+                //"B"
+                Expr B = find_dx(&child[1]);
+                // lhs = lhs + dA * B
+                Expr rhs = Binary::make(data_type, BinaryOpType::Add, lhs,  
+                                Binary::make(data_type, BinaryOpType::Mul, dA, B));            
+                                        
+                Stmt important_body = Move::make(lhs, rhs, MoveType::MemToMem);
+
+                // 加上boundarycheck
+                Stmt a;
+                a = IfThenElse::make(cond_temp, important_body, fake_stmt);
+                body_list.push_back(a);
+            }
+            else{
+                //todo:
+                //需要分别生成类似于下面的求导语句
+                //需要修改Boundarycheck
+                /*
+                if((i>=0&&i<10)&&(j>=0&&j<8)){
+                    dB<10, 8>[i, j] = dB<10, 8>[i, j] + dA<8, 8>[i,j] / 3.0;
+                }
+                if(((i+1)>=0&&(i+1)<10)&&(j>=0&&j<8)){
+                    dB<10, 8>[i+1, j] = dB<10, 8>[i+1, j] + dA<8, 8>[i,j] / 3.0;
+                }
+                if(((i+2)>=0&&(i+2)<10)&&(j>=0&&j<8)){
+                    dB<10, 8>[i+2, j] = dB<10, 8>[i+2, j] + dA<8, 8>[i,j] / 3.0;
+                }
+                */
+            }
             //HJH    
             std::vector<Expr> loop_indexs_vec;
             for (std::map<std::string, Expr>::iterator i = loop_indexs.begin(); i != loop_indexs.end(); ++i)
@@ -1010,10 +1028,24 @@ public:
             if (inputs.find(sname) == inputs.end())
                 inputs[sname] = ep;
         }
+        
         //HJH
+        if (sname == example.outs[0])
+        {
+            dout = Var::make(data_type, "d"+sname, index_list, bound_list);
+        }
+        
         for(int i=0;i<grad_to.size();++i){
-            if(compare_str(sname, grad_to[i])){
-                grad_to_expr[sname]=ep;
+            if(compare_str(sname, grad_to[i]){
+                std::string dname = "d" + sname; 
+                if(grad_to_expr.find(dname) == grad_to.end()){
+                    grad_to_expr[dname] = Var::make(data_type, dname, index_list, bound_list);  
+                }
+                else{
+                    more_occur = true;//case 10!
+                    grad_to_more_occur.push_back(grad_to_expr[dname]);
+                    grad_to_more_occur.push_back(Var::make(data_type, dname, index_list, bound_list))
+                }
                 break;
             }
         }
@@ -1079,10 +1111,23 @@ public:
             if (inputs.find(tname) == inputs.end())
                 inputs[tname] = ep;
         }
+        
         //HJH
+        if (sname == example.outs[0])
+        {
+            dout = Var::make(data_type, "d"+sname, index_list, bound_list);
+        }
         for(int i=0;i<grad_to.size();++i){
-            if(compare_str(tname, grad_to[i])){
-                grad_to_expr[tname]=ep;
+            if(compare_str(tname, grad_to[i]){
+                std::string dname = "d" + tname; 
+                if(grad_to_expr.find(dname) == grad_to.end()){
+                    grad_to_expr[dname] = Var::make(data_type, dname, index_list, bound_list);  
+                }
+                else{
+                    more_occur = true;//case 10!
+                    grad_to_more_occur.push_back(grad_to_expr[dname]);
+                    grad_to_more_occur.push_back(Var::make(data_type, dname, index_list, bound_list))
+                }
                 break;
             }
         }
