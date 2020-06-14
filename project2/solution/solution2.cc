@@ -24,6 +24,7 @@ const int INF = 64;
 //HJH:
 std::vector<std::string> grad_to;
 std::map<std::string, Expr> grad_to_expr;
+std::string current_grad_to;
 
 //  比较两个字符串是否相同。（忽略空格）
 bool compare_str(const std::string &s1, const std::string &s2)
@@ -208,9 +209,9 @@ std::map<std::string, Expr> inputs;
 std::map<std::string, Expr> outputs;
 
 
-// 等式整体的bandcheck。
-std::map<std::string, int> bandcheck_dom; //Q: begin=0?
-std::map<std::string, Expr> bandcheck_expr;
+// 等式整体的boundarycheck。
+std::map<std::string, int> boundarycheck_dom; //Q: begin=0?
+std::map<std::string, Expr> boundarycheck_expr;
 
 class AST;
 
@@ -227,9 +228,9 @@ public:
     Group gp;
     // std::map<std::string, Expr> expr_index_list; //for temp: index in ep
     
-    // 记录当前节点的bandcheck
-    std::map<std::string, Expr> bandcheck_list;  //记录bandcheck中要判断的expr
-    std::map<std::string, int> bandcheck_value; //用于记录bandcheck的范围
+    // 记录当前节点的boundarycheck
+    std::map<std::string, Expr> boundarycheck_list;  //记录boundarycheck中要判断的expr
+    std::map<std::string, int> boundarycheck_value; //用于记录boundarycheck的范围
     
     float value;                                // only meaningful for const
 
@@ -760,64 +761,57 @@ public:
 
     void IR_S()
     {
-        
+        std::vector<Stmt> body_list;
+        //HJH todo: 针对不同的求导对象，要生成的boundcheck代码是否相同？
+        //如果不相同，则需要修改，并最终放进下面的循环中
         // bondcheck使用if else实现的，这个是if失败时候执行的代码
         Stmt fake_stmt = Move::make(child[0].ep, child[0].ep, MoveType::MemToMem);
 
-        
-        std::vector<Stmt> body_list;
-        
-        // 这里的循环体要改成我们的 dx = dA * B, 现在只是 LHS = RHS
-        Stmt important_body = Move::make(child[0].ep, child[1].ep, MoveType::MemToMem);
-
-
-
-        // 开始构造bandcheck
-        // 合并两个儿子的bandcheck_list合并为本节点的bandcheck_list
-        for (std::map<std::string, Expr>::iterator i = child[0].bandcheck_list.begin(); i != child[0].bandcheck_list.end(); ++i)
+        // 开始构造boundarycheck
+        // 合并两个儿子的boundarycheck_list合并为本节点的boundarycheck_list
+        for (std::map<std::string, Expr>::iterator i = child[0].boundarycheck_list.begin(); i != child[0].boundarycheck_list.end(); ++i)
         {
-            if (bandcheck_list.find(i->first) == bandcheck_list.end())
+            if (boundarycheck_list.find(i->first) == boundarycheck_list.end())
             {
-                bandcheck_list[i->first] = i->second;
+                boundarycheck_list[i->first] = i->second;
             }
         }
-        for (std::map<std::string, Expr>::iterator i = child[1].bandcheck_list.begin(); i != child[1].bandcheck_list.end(); ++i)
+        for (std::map<std::string, Expr>::iterator i = child[1].boundarycheck_list.begin(); i != child[1].boundarycheck_list.end(); ++i)
         {
-            if (bandcheck_list.find(i->first) == bandcheck_list.end())
+            if (boundarycheck_list.find(i->first) == boundarycheck_list.end())
             {
-                bandcheck_list[i->first] = i->second;
+                boundarycheck_list[i->first] = i->second;
             }
         }
-        // 合并两个儿子的bandcheck_value合并为本节点的bandcheck_value
-        for (std::map<std::string, int>::iterator i = child[0].bandcheck_value.begin(); i != child[0].bandcheck_value.end(); ++i)
+        // 合并两个儿子的boundarycheck_value合并为本节点的boundarycheck_value
+        for (std::map<std::string, int>::iterator i = child[0].boundarycheck_value.begin(); i != child[0].boundarycheck_value.end(); ++i)
         {
             // 如果有更小的范围就换成更小的
-            if (bandcheck_value.find(i->first) == bandcheck_value.end())
+            if (boundarycheck_value.find(i->first) == boundarycheck_value.end())
             {
-                bandcheck_value[i->first] = i->second;
+                boundarycheck_value[i->first] = i->second;
             } else {
-                if (bandcheck_value[i->first] > i->second) {
-                    bandcheck_value[i->first] = i->second;
+                if (boundarycheck_value[i->first] > i->second) {
+                    boundarycheck_value[i->first] = i->second;
                 }
             }
         }
-        for (std::map<std::string, int>::iterator i = child[1].bandcheck_value.begin(); i != child[1].bandcheck_value.end(); ++i)
+        for (std::map<std::string, int>::iterator i = child[1].boundarycheck_value.begin(); i != child[1].boundarycheck_value.end(); ++i)
         {
-            if (bandcheck_value.find(i->first) == bandcheck_value.end())
+            if (boundarycheck_value.find(i->first) == boundarycheck_value.end())
             {
-                bandcheck_value[i->first] = i->second;
+                boundarycheck_value[i->first] = i->second;
             } else {
-                if (bandcheck_value[i->first] > i->second) {
-                    bandcheck_value[i->first] = i->second;
+                if (boundarycheck_value[i->first] > i->second) {
+                    boundarycheck_value[i->first] = i->second;
                 }
             }
         }
-        
         std::vector<Expr> ep_list;
         std::vector<int> value_list;
-        for (std::map<std::string, int>::iterator i = bandcheck_value.begin(); i != bandcheck_value.end(); ++i)
+        for (std::map<std::string, int>::iterator i = boundarycheck_value.begin(); i != boundarycheck_value.end(); ++i)
         {
-            ep_list.push_back(bandcheck_list[i->first]);
+            ep_list.push_back(boundarycheck_list[i->first]);
             value_list.push_back(i->second);
         }
 
@@ -834,47 +828,71 @@ public:
             cond_temp = Binary::make(bool_type, BinaryOpType::And, cond_temp, cond2_temp);
         }
 
-        
-        // 加上bandchek
-        Stmt a;
-        a = IfThenElse::make(cond_temp, important_body, fake_stmt);
+        //HJH todo: 应该是遍历grad_to中所有的求导对象
+        for(int i=0;i<grad_to.size();++i){
+            current_grad_to = grad_to[i];
+            
+            //HJH todo: 添加对当前求导对象的初始化, 例如dA[i][j]=0;
+            //Stmt initial = LoopNest::make(...);
+            //sp.push_back();
+            
+            //HJH: 循环体改成我们的 dx = dA * B
+            //todo: 针对dx和dA来make一个Expr
+            //"dx"
+            String str_lhs = "d" + current_grad_to;
+            Expr lhs = Expr(str_lhs);//error
+            //"dA"
+            String str_dA = "d" + example.outs[0];
+            Expr dA = Expr(str_dA);//error
+            //"B"
+            Expr B = find_dx(child[1]);
+            // lhs = lhs + dA * B
+            Expr rhs = Binary::make(data_type, BinaryOpType::Add, lhs,  
+                            Binary::make(data_type, BinaryOpType::Mul, dA, B));            
+                                    
+            Stmt important_body = Move::make(lhs, rhs, MoveType::MemToMem);
 
-        body_list.push_back(a);
-        
-        //HJH    
-        std::vector<Expr> loop_indexs_vec;
-        for (std::map<std::string, Expr>::iterator i = loop_indexs.begin(); i != loop_indexs.end(); ++i)
-        {
-            loop_indexs_vec.push_back(i->second);
+            // 加上bandchek
+            Stmt a;
+            a = IfThenElse::make(cond_temp, important_body, fake_stmt);
+            body_list.push_back(a);
+            
+            //HJH    
+            std::vector<Expr> loop_indexs_vec;
+            for (std::map<std::string, Expr>::iterator i = loop_indexs.begin(); i != loop_indexs.end(); ++i)
+            {
+                loop_indexs_vec.push_back(i->second);
+            }
+            Stmt A = LoopNest::make(loop_indexs_vec, body_list);
+            sp.push_back(A);
         }
-        Stmt A = LoopNest::make(loop_indexs_vec, body_list);
-        sp.push_back(A);
+        
         //-------------------
         //std::cout << "loop index in S " << tmp.size() << std::endl;
         //sp = LoopNest::make(tmp, {main_stmt});
 
         loop_indexs.clear();
-        bandcheck_dom.clear();
-        bandcheck_expr.clear();
+        boundarycheck_dom.clear();
+        boundarycheck_expr.clear();
     }
 
     void IR_LHS()
     {
         ep = child[0].ep;
 
-        // 把LHS儿子的bandcheck_list给自己
-        for (std::map<std::string, Expr>::iterator i = child[0].bandcheck_list.begin(); i != child[0].bandcheck_list.end(); i++)
+        // 把LHS儿子的boundarycheck_list给自己
+        for (std::map<std::string, Expr>::iterator i = child[0].boundarycheck_list.begin(); i != child[0].boundarycheck_list.end(); i++)
         {
-            if (bandcheck_list.find(i->first) == bandcheck_list.end())
-                bandcheck_list[i->first] = i->second;
+            if (boundarycheck_list.find(i->first) == boundarycheck_list.end())
+                boundarycheck_list[i->first] = i->second;
         }
         
-        // 把LHS儿子的bandcheck_value给自己
-        for (std::map<std::string, int>::iterator i = child[0].bandcheck_value.begin(); i != child[0].bandcheck_value.end(); ++i)
+        // 把LHS儿子的boundarycheck_value给自己
+        for (std::map<std::string, int>::iterator i = child[0].boundarycheck_value.begin(); i != child[0].boundarycheck_value.end(); ++i)
         {
-            if (bandcheck_value.find(i->first) == bandcheck_value.end())
+            if (boundarycheck_value.find(i->first) == boundarycheck_value.end())
             {
-                bandcheck_value[i->first] = i->second;
+                boundarycheck_value[i->first] = i->second;
             }
         }
     }
@@ -903,45 +921,45 @@ public:
             ep = child[0].ep;
         }
 
-        // 把RHS儿子的bandcheck_list和bandcheck_value合并给自己
+        // 把RHS儿子的boundarycheck_list和boundarycheck_value合并给自己
         if (child.size() == 3)
         {
-            // 合并两个儿子的bandcheck_list合并为本节点的bandcheck_list给自己
-            for (std::map<std::string, Expr>::iterator i = child[0].bandcheck_list.begin(); i != child[0].bandcheck_list.end(); ++i)
+            // 合并两个儿子的boundarycheck_list合并为本节点的boundarycheck_list给自己
+            for (std::map<std::string, Expr>::iterator i = child[0].boundarycheck_list.begin(); i != child[0].boundarycheck_list.end(); ++i)
             {
-                if (bandcheck_list.find(i->first) == bandcheck_list.end())
+                if (boundarycheck_list.find(i->first) == boundarycheck_list.end())
                 {
-                    bandcheck_list[i->first] = i->second;
+                    boundarycheck_list[i->first] = i->second;
                 }
             }
-            for (std::map<std::string, Expr>::iterator i = child[2].bandcheck_list.begin(); i != child[2].bandcheck_list.end(); ++i)
+            for (std::map<std::string, Expr>::iterator i = child[2].boundarycheck_list.begin(); i != child[2].boundarycheck_list.end(); ++i)
             {
-                if (bandcheck_list.find(i->first) == bandcheck_list.end())
+                if (boundarycheck_list.find(i->first) == boundarycheck_list.end())
                 {
-                    bandcheck_list[i->first] = i->second;
+                    boundarycheck_list[i->first] = i->second;
                 }
             }
-            // 合并两个儿子的bandcheck_value合并为本节点的bandcheck_value给自己
-            for (std::map<std::string, int>::iterator i = child[0].bandcheck_value.begin(); i != child[0].bandcheck_value.end(); ++i)
+            // 合并两个儿子的boundarycheck_value合并为本节点的boundarycheck_value给自己
+            for (std::map<std::string, int>::iterator i = child[0].boundarycheck_value.begin(); i != child[0].boundarycheck_value.end(); ++i)
             {
                 // 如果有更小的范围就换成更小的
-                if (bandcheck_value.find(i->first) == bandcheck_value.end())
+                if (boundarycheck_value.find(i->first) == boundarycheck_value.end())
                 {
-                    bandcheck_value[i->first] = i->second;
+                    boundarycheck_value[i->first] = i->second;
                 } else {
-                    if (bandcheck_value[i->first] > i->second) {
-                        bandcheck_value[i->first] = i->second;
+                    if (boundarycheck_value[i->first] > i->second) {
+                        boundarycheck_value[i->first] = i->second;
                     }
                 }
             }
-            for (std::map<std::string, int>::iterator i = child[2].bandcheck_value.begin(); i != child[2].bandcheck_value.end(); ++i)
+            for (std::map<std::string, int>::iterator i = child[2].boundarycheck_value.begin(); i != child[2].boundarycheck_value.end(); ++i)
             {
-                if (bandcheck_value.find(i->first) == bandcheck_value.end())
+                if (boundarycheck_value.find(i->first) == boundarycheck_value.end())
                 {
-                    bandcheck_value[i->first] = i->second;
+                    boundarycheck_value[i->first] = i->second;
                 } else {
-                    if (bandcheck_value[i->first] > i->second) {
-                        bandcheck_value[i->first] = i->second;
+                    if (boundarycheck_value[i->first] > i->second) {
+                        boundarycheck_value[i->first] = i->second;
                     }
                 }
             }
@@ -949,20 +967,20 @@ public:
         else
         {
             // 如果下面只是一个Tref就直接传过来。
-            //bandcheck_list
-            for (std::map<std::string, Expr>::iterator i = child[0].bandcheck_list.begin(); i != child[0].bandcheck_list.end(); ++i)
+            //boundarycheck_list
+            for (std::map<std::string, Expr>::iterator i = child[0].boundarycheck_list.begin(); i != child[0].boundarycheck_list.end(); ++i)
             {
-                if (bandcheck_list.find(i->first) == bandcheck_list.end())
+                if (boundarycheck_list.find(i->first) == boundarycheck_list.end())
                 {
-                    bandcheck_list[i->first] = i->second;
+                    boundarycheck_list[i->first] = i->second;
                 }
             }
-            //bandcheck_value
-            for (std::map<std::string, int>::iterator i = child[0].bandcheck_value.begin(); i != child[0].bandcheck_value.end(); ++i)
+            //boundarycheck_value
+            for (std::map<std::string, int>::iterator i = child[0].boundarycheck_value.begin(); i != child[0].boundarycheck_value.end(); ++i)
             {
-                if (bandcheck_value.find(i->first) == bandcheck_value.end())
+                if (boundarycheck_value.find(i->first) == boundarycheck_value.end())
                 {
-                    bandcheck_value[i->first] = i->second;
+                    boundarycheck_value[i->first] = i->second;
                 }
             }
         }
@@ -1025,7 +1043,7 @@ public:
         // 定义出张量
         ep = Var::make(data_type, tname, index_list, bound_list);
 
-        // 把本节点做bandcheck所需要的ep和value放入节点的bandcheck_list和bandcheck_value中
+        // 把本节点做boundarycheck所需要的ep和value放入节点的boundarycheck_list和boundarycheck_value中
         std::string index_name;
         int index_value;
         for (int i = 0; i < child[1].child.size(); ++i)
@@ -1035,18 +1053,18 @@ public:
             index_value = child[1].child[i].value;
 
             // 如果对于同样的下标有更小的范围，则替换原来的value。
-            if (bandcheck_list.find(index_name) != bandcheck_list.end())
+            if (boundarycheck_list.find(index_name) != boundarycheck_list.end())
             {
-                if (bandcheck_value[index_name] > index_value)
+                if (boundarycheck_value[index_name] > index_value)
                 {
-                    this->bandcheck_value[index_name] = child[1].child[i].value;
-                    this->bandcheck_list[index_name] = child[2].child[i].ep;
+                    this->boundarycheck_value[index_name] = child[1].child[i].value;
+                    this->boundarycheck_list[index_name] = child[2].child[i].ep;
                 }
             }
             else
             {
-                this->bandcheck_value[index_name] = child[1].child[i].value;
-                this->bandcheck_list[index_name] = child[2].child[i].ep;
+                this->boundarycheck_value[index_name] = child[1].child[i].value;
+                this->boundarycheck_list[index_name] = child[2].child[i].ep;
             }
         }
 
@@ -1161,18 +1179,20 @@ public:
 
 // todo: 从右边值节点开始递归求微分。
 Expr find_dx(AST *RHS){
-    if(RHS.child.size()==3){
-        Expr ch1 = RHS.child[0].ep;Expr ch2 = RHS.child[2].ep;
-        if(RHS.child[1].str=="+")return Binary::make(data_type,BinaryOpType::Add,find_dx(ch1),find_dx(ch2));
-        if(RHS.child[1].str=="-")return Binary::make(data_type,BinaryOpType::Sub,find_dx(ch1),find_dx(ch2));
-        if(RHS.child[1].str=="*")return Binary::make(data_type,BinaryOpType::Add,
-            Binary::make(data_type,BinaryOpType::Mul,find_dx(ch1),ch2),Binary::make(data_type, BinaryOpType::Mul,ch1,find_dx(ch2)));
-        if(RHS.child[1].str=="/")return Binary::make(data_type, BinaryOpType::Div,find_dx(ch1),ch2);
+    if(RHS->child.size()==3){
+        AST ch1a = RHS->child[0], ch2a = RHS->child[2];
+        Expr ch1 = ch1a.ep;Expr ch2 = ch2a.ep;
+        if(RHS->child[1].str=="+")return Binary::make(data_type,BinaryOpType::Add,find_dx(ch1a),find_dx(ch2a));
+        if(RHS->child[1].str=="-")return Binary::make(data_type,BinaryOpType::Sub,find_dx(ch1a),find_dx(ch2a));
+        if(RHS->child[1].str=="*")return Binary::make(data_type,BinaryOpType::Add,
+            Binary::make(data_type,BinaryOpType::Mul,find_dx(ch1a),ch2),Binary::make(data_type, BinaryOpType::Mul,ch1,find_dx(ch2a)));
+        if(RHS->child[1].str=="/")return Binary::make(data_type, BinaryOpType::Div,find_dx(ch1a),ch2);
         }
-    int i;
-    for(i=0;i<grad_to.size();i++)
-        if(compare_str(RHS.child[0].str,grad_to[i]))return 1;
-    return 0;
+        System.out.println("not implemented yet.");
+        return NULL;
+    }
+    if(compare_str(RHS->child[0].str,current_grad_to))return 1;
+    else return 0;
 }
 int main(int argc, char *argv[])
 {
