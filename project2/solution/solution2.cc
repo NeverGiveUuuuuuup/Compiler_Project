@@ -20,6 +20,9 @@
 using namespace Boost::Internal;
 
 const int INF = 64;
+//说明 by HJH：
+//我有修改或者添加框架的地方，都用HJH作为标识符，可以通过ctrl-f进行搜索
+//todo表示待完善
 
 //HJH 这些是我补充的要用到的变量:
 std::vector<std::string> grad_to; //里面是从json中读取出来的求导对象，例如"A", "B"
@@ -832,8 +835,8 @@ public:
         }
 
         //HJH todo: 应该是遍历grad_to中所有的求导对象
-        for(int i=0;i<grad_to.size();++i){
-            current_grad_to = grad_to[i];
+        for(int index=0;index<grad_to.size();++index){
+            current_grad_to = grad_to[index];
             
             //HJH todo: 添加对当前求导对象的初始化, 例如dA[i][j]=0;
             //Stmt initial = LoopNest::make(...);
@@ -861,8 +864,7 @@ public:
             }
             else{
                 //todo:
-                //需要分别生成类似于下面的求导语句
-                //需要修改Boundarycheck
+                //(1)需要分别生成类似于下面的求导语句
                 /*
                 if((i>=0&&i<10)&&(j>=0&&j<8)){
                     dB<10, 8>[i, j] = dB<10, 8>[i, j] + dA<8, 8>[i,j] / 3.0;
@@ -874,6 +876,14 @@ public:
                     dB<10, 8>[i+2, j] = dB<10, 8>[i+2, j] + dA<8, 8>[i,j] / 3.0;
                 }
                 */
+                for(int i=0;i<grad_to_more_occur;++i){
+                    //注意：不能直接调用find_dx，对于乘法可以照旧，但是加法需要确认是不是当前的索引
+                    //也就是说对于dB[i+2,j]求导时，不考虑B[i+1,j]所在的加法项（返回0）
+                    //目前的find_dx只是比对string，判断求导对象是不是"B"，因此可能需要添加对下标的判断
+                
+                }
+                //HJH todo:
+                //需要修改Boundarycheck
             }
             //HJH    
             std::vector<Expr> loop_indexs_vec;
