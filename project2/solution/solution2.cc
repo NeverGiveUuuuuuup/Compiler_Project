@@ -24,6 +24,8 @@ const int INF = 64;
 //我有修改或者添加框架的地方，都用HJH作为标识符，可以通过ctrl-f进行搜索
 //todo表示待完善
 
+
+
 //HJH 这些是我补充的要用到的变量:
 std::vector<std::string> grad_to; //里面是从json中读取出来的求导对象，例如"A", "B"
 std::map<std::string, Expr> grad_to_expr; //对每个求导对象建立一个Var（见IR_Tref, IR_SRef有关代码）
@@ -31,6 +33,15 @@ std::string current_grad_to;//针对当前求导对象来进行求导
 bool more_occur=false;//判断是否是case10，在右值中出现多个B
 std::vector<Expr> grad_to_more_occur;//多个B的表达式，例如B[i+1][j], B[i-1][j]等，要分别生成求导式子。对应的string就是"d"+grad_to[0]
 Expr dout;//对输出对象的求导
+int current_num;  //表示在一个求导对象出现多次的时候，这次访问的是第几次。
+int should_num;  //表示在一个求导对象出现多次的时候，这次调用应该求第几个。
+
+// 用来实现每个求微分的不同bandcheck
+class AST;
+std::map<std::string, Expr> dx_check_ep;
+std::map<std::string, int> dx_check_value; 
+std::vector<AST*> dx_list;  //求导中保留的项就压入这里，然后遍历里面的每个节点的bandchec来生成总结点的bandcheck
+
 
 //  比较两个字符串是否相同。（忽略空格）
 bool compare_str(const std::string &s1, const std::string &s2)
@@ -219,7 +230,8 @@ std::map<std::string, Expr> outputs;
 std::map<std::string, int> boundarycheck_dom; //Q: begin=0?
 std::map<std::string, Expr> boundarycheck_expr;
 
-class AST;
+
+Expr find_dx(AST *RHS);
 
 // AST树节点的类
 class AST
@@ -543,33 +555,26 @@ public:
             child.push_back(AST((nodetype)6, tmp));
         child.back().father = this;
     }
-
-    // 生成AList, 子节点是向量字母参数。
-    void build_AList()
-    {
+    
+    // 生成AList, 子节点是向量字母参数。 
+    void build_AList(){
         int i = 0;
         std::string tmp;
-        for (; i < str.size(); ++i)
-        {
-            if (str[i] == ' ')
-                continue;
-            else if (str[i] == ',')
-            {
-                child.push_back(AST((nodetype)10, tmp)); // IdExpr
+        for(; i < str.size(); ++i){
+            if(str[i] == ' ') continue;
+            else if(str[i] == ','){
+                child.push_back(AST((nodetype) 10, tmp)); // IdExpr
                 child.back().father = this;
                 tmp = "";
             }
-            else
-                tmp += str[i];
+            else tmp += str[i];
         }
-        if (tmp != "")
-        {
-            child.push_back(AST((nodetype)10, tmp)); // IdExpr
+        if(tmp != ""){
+            child.push_back(AST((nodetype) 10, tmp)); // IdExpr
             child.back().father = this;
         }
     }
-
-    // Alist里面的字母参数，可以是表达式。
+     
     void build_IdExpr()
     {
         int s1 = -1;
@@ -767,9 +772,12 @@ public:
 
     void IR_S()
     {
+        //循环内部的东西放入body_list中
         std::vector<Stmt> body_list;
+
         //HJH todo: 针对不同的求导对象，要生成的boundcheck代码是否相同？
         //如果不相同，则需要修改，并最终放进下面的循环中
+        
         // bondcheck使用if else实现的，这个是if失败时候执行的代码
         Stmt fake_stmt = Move::make(child[0].ep, child[0].ep, MoveType::MemToMem);
 
@@ -789,6 +797,7 @@ public:
                 boundarycheck_list[i->first] = i->second;
             }
         }
+        
         // 合并两个儿子的boundarycheck_value合并为本节点的boundarycheck_value
         for (std::map<std::string, int>::iterator i = child[0].boundarycheck_value.begin(); i != child[0].boundarycheck_value.end(); ++i)
         {
@@ -813,6 +822,7 @@ public:
                 }
             }
         }
+        
         std::vector<Expr> ep_list;
         std::vector<int> value_list;
         for (std::map<std::string, int>::iterator i = boundarycheck_value.begin(); i != boundarycheck_value.end(); ++i)
@@ -820,8 +830,6 @@ public:
             ep_list.push_back(boundarycheck_list[i->first]);
             value_list.push_back(i->second);
         }
-
-
         Expr cond_temp, cond1_temp, cond2_temp;
         cond1_temp = Compare::make(data_type, CompareOpType::LE, Expr(int(0)), ep_list[0]);
         cond2_temp = Compare::make(data_type, CompareOpType::LT, ep_list[0], Expr(int(value_list[0])));
@@ -833,9 +841,12 @@ public:
             cond2_temp = Compare::make(data_type, CompareOpType::LT, ep_list[i], Expr(int(value_list[i])));
             cond_temp = Binary::make(bool_type, BinaryOpType::And, cond_temp, cond2_temp);
         }
-
-        //HJH todo: 应该是遍历grad_to中所有的求导对象
-        for(int index=0;index<grad_to.size();++index){
+        // ---------------------以上求出了原来式子的bandcheck-----------------------------
+        /*
+            HJH todo: 应该是遍历grad_to中所有的求导对象
+            每个求导对象一个bandcheck。
+        */
+        for(int index=0;index < grad_to.size();++index){
             current_grad_to = grad_to[index];
             
             //HJH todo: 添加对当前求导对象的初始化, 例如dA[i][j]=0;
@@ -845,12 +856,17 @@ public:
             //HJH: 循环体改成我们的 dx = dA * B
             
             //"dx" todo:这里没有考虑more_occr=true的情况
-            if(more_occur==false){
+            
+            if(!more_occur){
                 Expr lhs = grad_to_expr["d"+current_grad_to];
                 //"dA"
                 Expr dA = dout;
+                
                 //"B"
-                Expr B = find_dx(&child[1]);
+                std::cout << "^^^^^^^^^^^^^^^^^^^^" << std::endl;
+                Expr B = find_dx(&(child[1]));
+                std::cout << "^^^^^^^^^^^^^^^^^^^^" << std::endl;
+                
                 // lhs = lhs + dA * B
                 Expr rhs = Binary::make(data_type, BinaryOpType::Add, lhs,  
                                 Binary::make(data_type, BinaryOpType::Mul, dA, B));            
@@ -861,6 +877,7 @@ public:
                 Stmt a;
                 a = IfThenElse::make(cond_temp, important_body, fake_stmt);
                 body_list.push_back(a);
+                dx_list.clear();
             }
             else{
                 //todo:
@@ -876,15 +893,40 @@ public:
                     dB<10, 8>[i+2, j] = dB<10, 8>[i+2, j] + dA<8, 8>[i,j] / 3.0;
                 }
                 */
-                for(int i=0;i<grad_to_more_occur;++i){
+                for(int i=0;i<grad_to_more_occur.size();++i){
                     //注意：不能直接调用find_dx，对于乘法可以照旧，但是加法需要确认是不是当前的索引
                     //也就是说对于dB[i+2,j]求导时，不考虑B[i+1,j]所在的加法项（返回0）
                     //目前的find_dx只是比对string，判断求导对象是不是"B"，因此可能需要添加对下标的判断
-                
+                    should_num = i;
+                    Expr lhs = grad_to_expr["d"+current_grad_to];
+                    //"dA"
+                    Expr dA = dout;
+                    
+                    //"B"
+                    std::cout << "^^^^^^^^^^^^^^^^^^^^" << std::endl;
+                    Expr B = find_dx(&(child[1]));
+                    std::cout << "^^^^^^^^^^^^^^^^^^^^" << std::endl;
+                    
+                    // lhs = lhs + dA * B
+                    Expr rhs = Binary::make(data_type, BinaryOpType::Add, lhs,  
+                                    Binary::make(data_type, BinaryOpType::Mul, dA, B));                         
+                    Stmt important_body = Move::make(lhs, rhs, MoveType::MemToMem);
+
+
+                    // 加上boundarycheck,这里要改一下。
+                    
+
+
+
+                    Stmt a;
+                    a = IfThenElse::make(cond_temp, important_body, fake_stmt);
+
+                    body_list.push_back(a);
+                    dx_list.clear();
                 }
-                //HJH todo:
-                //需要修改Boundarycheck
+                
             }
+
             //HJH    
             std::vector<Expr> loop_indexs_vec;
             for (std::map<std::string, Expr>::iterator i = loop_indexs.begin(); i != loop_indexs.end(); ++i)
@@ -893,6 +935,7 @@ public:
             }
             Stmt A = LoopNest::make(loop_indexs_vec, body_list);
             sp.push_back(A);
+            dx_list.clear();
         }
         
         //-------------------
@@ -1039,22 +1082,26 @@ public:
                 inputs[sname] = ep;
         }
         
-        //HJH
+        //HJH 如果是要输出的就放入outputs里面
         if (sname == example.outs[0])
         {
             dout = Var::make(data_type, "d"+sname, index_list, bound_list);
         }
         
+        // 查看是否是要求导的张量，如果是新的就放入grad_to_expr,如果重复了就标记为多张量求导，并压入grad_to_more+occur中。
         for(int i=0;i<grad_to.size();++i){
-            if(compare_str(sname, grad_to[i]){
+            if(compare_str(sname, grad_to[i])){
                 std::string dname = "d" + sname; 
-                if(grad_to_expr.find(dname) == grad_to.end()){
+                if(grad_to_expr.find(dname) == grad_to_expr.end()){
                     grad_to_expr[dname] = Var::make(data_type, dname, index_list, bound_list);  
                 }
                 else{
-                    more_occur = true;//case 10!
-                    grad_to_more_occur.push_back(grad_to_expr[dname]);
-                    grad_to_more_occur.push_back(Var::make(data_type, dname, index_list, bound_list))
+                    if (!more_occur)
+                    {
+                        more_occur = true;//case 10!
+                        grad_to_more_occur.push_back(grad_to_expr[dname]);
+                    }
+                    grad_to_more_occur.push_back(Var::make(data_type, dname, index_list, bound_list));
                 }
                 break;
             }
@@ -1123,22 +1170,26 @@ public:
         }
         
         //HJH
-        if (sname == example.outs[0])
+        if (tname == example.outs[0])
         {
-            dout = Var::make(data_type, "d"+sname, index_list, bound_list);
+            dout = Var::make(data_type, "d"+tname, index_list, bound_list);
         }
+
+        // 查看是否是要求导的张量，如果是新的就放入grad_to_expr,如果重复了就标记为多张量求导，并压入grad_to_more+occur中。
         for(int i=0;i<grad_to.size();++i){
-            if(compare_str(tname, grad_to[i]){
+            if(compare_str(tname, grad_to[i])){
                 std::string dname = "d" + tname; 
-                if(grad_to_expr.find(dname) == grad_to.end()){
+                if(grad_to_expr.find(dname) == grad_to_expr.end()){
                     grad_to_expr[dname] = Var::make(data_type, dname, index_list, bound_list);  
                 }
                 else{
-                    more_occur = true;//case 10!
-                    grad_to_more_occur.push_back(grad_to_expr[dname]);
-                    grad_to_more_occur.push_back(Var::make(data_type, dname, index_list, bound_list))
+                    if (!more_occur) {
+                        more_occur = true;//case 10!
+                        grad_to_more_occur.push_back(grad_to_expr[dname]);
+                    }
+                    grad_to_more_occur.push_back(Var::make(data_type, dname, index_list, bound_list));
+                    break;
                 }
-                break;
             }
         }
     }
@@ -1234,26 +1285,78 @@ public:
 
 // todo: 从右边值节点开始递归求微分。
 Expr find_dx(AST *RHS){
-    if(RHS->child.size()==3){
-        AST ch1a = RHS->child[0], ch2a = RHS->child[2];
-        Expr ch1 = ch1a.ep;Expr ch2 = ch2a.ep;
-        if(RHS->child[1].str=="+")return Binary::make(data_type,BinaryOpType::Add,find_dx(&ch1a),find_dx(&ch2a));
-        if(RHS->child[1].str=="-")return Binary::make(data_type,BinaryOpType::Sub,find_dx(&ch1a),find_dx(&ch2a));
-        if(RHS->child[1].str=="*")return Binary::make(data_type,BinaryOpType::Add,
-            Binary::make(data_type,BinaryOpType::Mul,find_dx(&ch1a),ch2),Binary::make(data_type, BinaryOpType::Mul,ch1,find_dx(&ch2a)));
-        if(RHS->child[1].str=="/")return Binary::make(data_type, BinaryOpType::Div,find_dx(&ch1a),ch2);
+    if (RHS->t == 3) {
+        if (RHS->child.size()== 3){
+            AST ch1a = RHS->child[0], ch2a = RHS->child[2];
+            Expr ch1 = ch1a.ep;Expr ch2 = ch2a.ep;
+            if(RHS->child[1].str=="+")
+            {
+                
+                return Binary::make(data_type,BinaryOpType::Add,find_dx(&ch1a),find_dx(&ch2a));
+            }
+            if(RHS->child[1].str=="-")
+            {
+                
+                return Binary::make(data_type,BinaryOpType::Sub,find_dx(&ch1a),find_dx(&ch2a));
+            }
+            if(RHS->child[1].str=="*")
+            {
+                dx_list.push_back(&ch1a);
+                dx_list.push_back(&ch2a);
+                return Binary::make(data_type,BinaryOpType::Add,
+                Binary::make(data_type,BinaryOpType::Mul,find_dx(&ch1a),ch2),Binary::make(data_type, BinaryOpType::Mul,ch1,find_dx(&ch2a)));
+            }
+            if(RHS->child[1].str=="/")
+            {
+                std::cout << "/" << std::endl;
+                if(ch2a.t == 3 || ch2a.t == 4 || ch2a.t == 5)
+                {
+                    dx_list.push_back(&ch2a);
+                }
+                return Binary::make(data_type, BinaryOpType::Div,find_dx(&ch1a),ch2);
+            }
+            std::cout << "出现没考虑符号";
         }
-        System.out.println("not implemented yet.");
-        return NULL;
+        else {
+            std::cout << "???????" << RHS->str << std::endl;
+            return find_dx(&(RHS->child[0]));
+        }
     }
-    if(compare_str(RHS->child[0].str,current_grad_to))return 1;
-    else return 0;
+    else {
+        if(RHS->t == 4) {
+            if(more_occur){
+                if(RHS->child[0].str == current_grad_to && should_num == current_num)
+                {
+                    return Expr(int(1));
+                }
+                else return Expr(int(0));
+                current_num++;
+            }
+            else {
+                if(RHS->child[0].str == current_grad_to)
+                {
+                    return Expr(int(1));
+                }
+                else return Expr(int(0));
+            }
+        }
+        if(RHS->t == 5) {
+            return Expr(int(0));
+        }
+        if(RHS->t == 6) {
+            return Expr(int(0));
+        }
+    }  
 }
+
 int main(int argc, char *argv[])
 {
     //HJH 
     //std::string src = "./cases/examples.json"; 
-    std::string src = "./cases/case1.json";
+    std::string strin;
+    std::cin >> strin;
+    std::cout << strin;
+    std::string src = "../../project2/cases/case"+ strin + ".json";
     example = parse_json(src);
     
     example.print();
@@ -1261,13 +1364,16 @@ int main(int argc, char *argv[])
     AST root = AST((nodetype)0, example.kernel);
     root.build_tree();
     std::cout << "---build tree finish---" << std::endl;
+    
     root.travel();
     std::cout << "***travel finish***" << std::endl;
+    
     root.build_IR();
     std::cout << "***build IR finish***" << std::endl;
+    
     std::cout << root.str << std::endl;
 
-    Group kernel = root.gp;
+    Group kernel = root.gp; 
     // visitor
     IRVisitor visitor;
     root.gp.visit_group(&visitor);
@@ -1278,9 +1384,18 @@ int main(int argc, char *argv[])
 
     // printer
     CCPrinter printer;
-    std::string code = printer.print(root.gp);
-    return 0;
 
+    std::cout << "----------CODE-----------" << std::endl;
+    std::string code = printer.print(root.gp);
+    std::cout << code << std::endl;
+    std::cout << "----------CODE-----------" << std::endl;
+    
+    std::cout << grad_to.size() << std::endl;
+    for(int i = 0;i < grad_to.size(); ++i) {
+        std::cout << grad_to[i] << std::endl;
+    }
+    return 0;
+}
     // std::string src, dst;
     // for (int i = 0; i <= 10; ++i)
     // {
@@ -1328,4 +1443,4 @@ int main(int argc, char *argv[])
     //     ofile.close();
     //     std::cout << "************" << std::endl;
     // }
-}
+
