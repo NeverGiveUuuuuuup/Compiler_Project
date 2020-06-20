@@ -893,11 +893,12 @@ public:
                     dB<10, 8>[i+2, j] = dB<10, 8>[i+2, j] + dA<8, 8>[i,j] / 3.0;
                 }
                 */
-                for(int i=0;i<grad_to_more_occur.size();++i){
+                should_num = 0;
+                for(int i=0;i<grad_to_more_occur.size();i++){
                     //注意：不能直接调用find_dx，对于乘法可以照旧，但是加法需要确认是不是当前的索引
                     //也就是说对于dB[i+2,j]求导时，不考虑B[i+1,j]所在的加法项（返回0）
                     //目前的find_dx只是比对string，判断求导对象是不是"B"，因此可能需要添加对下标的判断
-                    should_num = i;
+                    
                     Expr lhs = grad_to_expr["d"+current_grad_to];
                     //"dA"
                     Expr dA = dout;
@@ -905,6 +906,7 @@ public:
                     //"B"
                     std::cout << "^^^^^^^^^^^^^^^^^^^^" << std::endl;
                     Expr B = find_dx(&(child[1]));
+                    should_num++;
                     std::cout << "^^^^^^^^^^^^^^^^^^^^" << std::endl;
                     
                     // lhs = lhs + dA * B
@@ -924,7 +926,6 @@ public:
                     body_list.push_back(a);
                     dx_list.clear();
                 }
-                
             }
 
             //HJH    
@@ -1327,10 +1328,10 @@ Expr find_dx(AST *RHS){
             if(more_occur){
                 if(RHS->child[0].str == current_grad_to && should_num == current_num)
                 {
+                    current_num++;
                     return Expr(int(1));
                 }
                 else return Expr(int(0));
-                current_num++;
             }
             else {
                 if(RHS->child[0].str == current_grad_to)
@@ -1353,11 +1354,12 @@ int main(int argc, char *argv[])
 {
     //HJH 
     //std::string src = "./cases/examples.json"; 
-    std::string strin;
-    std::cin >> strin;
-    std::cout << strin;
-    std::string src = "../../project2/cases/case"+ strin + ".json";
+    
+    std::string src = "./cases/case2.json";
+
+    std::cout << "---build tree finish---" << std::endl;
     example = parse_json(src);
+    std::cout << "---build tree finish---" << std::endl;
     
     example.print();
 
