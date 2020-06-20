@@ -33,8 +33,8 @@ std::string current_grad_to;//针对当前求导对象来进行求导
 bool more_occur=false;//判断是否是case10，在右值中出现多个B
 std::vector<Expr> grad_to_more_occur;//多个B的表达式，例如B[i+1][j], B[i-1][j]等，要分别生成求导式子。对应的string就是"d"+grad_to[0]
 Expr dout;//对输出对象的求导
-int current_num;  //表示在一个求导对象出现多次的时候，这次访问的是第几次。
-int should_num;  //表示在一个求导对象出现多次的时候，这次调用应该求第几个。
+int current_num = 0;  //表示在一个求导对象出现多次的时候，这次访问的是第几次。
+int should_num = 0;  //表示在一个求导对象出现多次的时候，这次调用应该求第几个。
 
 // 用来实现每个求微分的不同bandcheck
 class AST;
@@ -855,7 +855,6 @@ public:
             
             //HJH: 循环体改成我们的 dx = dA * B
             
-            //"dx" todo:这里没有考虑more_occr=true的情况
             
             if(!more_occur){
                 Expr lhs = grad_to_expr["d"+current_grad_to];
@@ -905,6 +904,7 @@ public:
                     
                     //"B"
                     std::cout << "^^^^^^^^^^^^^^^^^^^^" << std::endl;
+                    current_num = 0;
                     Expr B = find_dx(&(child[1]));
                     should_num++;
                     std::cout << "^^^^^^^^^^^^^^^^^^^^" << std::endl;
@@ -917,8 +917,6 @@ public:
 
                     // 加上boundarycheck,这里要改一下。
                     
-
-
 
                     Stmt a;
                     a = IfThenElse::make(cond_temp, important_body, fake_stmt);
@@ -1326,10 +1324,17 @@ Expr find_dx(AST *RHS){
     else {
         if(RHS->t == 4) {
             if(more_occur){
-                if(RHS->child[0].str == current_grad_to && should_num == current_num)
+                if(RHS->child[0].str == current_grad_to)
                 {
+                    std::cout << "这是第"<< current_num << "次遇到,应该处理第" << should_num << "个" <<std::endl;
+                    
+                    if(should_num == current_num)
+                    {
+                        current_num++;
+                        return Expr(int(1));
+                    }
                     current_num++;
-                    return Expr(int(1));
+                    return Expr(int(0));
                 }
                 else return Expr(int(0));
             }
@@ -1355,7 +1360,7 @@ int main(int argc, char *argv[])
     //HJH 
     //std::string src = "./cases/examples.json"; 
     
-    std::string src = "./cases/case2.json";
+    std::string src = "./cases/case4.json";
 
     std::cout << "---build tree finish---" << std::endl;
     example = parse_json(src);
