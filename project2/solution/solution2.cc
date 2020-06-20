@@ -9,6 +9,7 @@
 #include <stack>
 #include <math.h>
 #include <map>
+#include <typeinfo>
 
 #include "IR.h"
 #include "IRMutator.h"
@@ -16,6 +17,7 @@
 #include "IRVisitor.h"
 #include "type.h"
 #include "CCPrinter.h"
+
 
 using namespace Boost::Internal;
 
@@ -40,7 +42,7 @@ int should_num = 0;  //表示在一个求导对象出现多次的时候，这次
 class AST;
 std::map<std::string, Expr> dx_check_ep;
 std::map<std::string, int> dx_check_value; 
-std::vector<AST*> dx_list;  //求导中保留的项就压入这里，然后遍历里面的每个节点的bandchec来生成总结点的bandcheck
+std::vector<AST> dx_list;  //求导中保留的项就压入这里，然后遍历里面的每个节点的bandchec来生成总结点的bandcheck
 
 
 //  比较两个字符串是否相同。（忽略空格）
@@ -871,6 +873,65 @@ public:
                                 Binary::make(data_type, BinaryOpType::Mul, dA, B));            
                                         
                 Stmt important_body = Move::make(lhs, rhs, MoveType::MemToMem);
+                
+
+                std::cout << "wrong begin" << std::endl;
+                // ---------------------下面开始求 求导式子的 bandcheck-----------------------------
+                std::map<std::string, Expr> ep_map;
+                std::map<std::string, int> value_map;
+                std::cout << dx_list[0].t << std::endl;
+                // 合并dx_list中搜集到的所有的节点的bandcheck_list
+                std::cout << dx_list[1].t << std::endl;
+                std::cout << dx_list[0].str << std::endl;
+                std::cout << dx_list[1].str << std::endl;   
+                std::cout << dx_list.size() << std::endl;
+                for(int j = 0;j < dx_list.size();j++)
+                {
+                    for (std::map<std::string, Expr>::iterator i = dx_list[j].boundarycheck_list.begin(); i != dx_list[j].boundarycheck_list.end(); i++)
+                    {
+                        if (ep_map.find(i->first) == ep_map.end())
+                        {
+                            std::cout << i->first << std::endl;
+                            ep_map[i->first] = i->second;
+                        }
+                    }
+                    
+                    // 合并dx_list中搜集到的所有的节点的bandcheck_value
+                    for (std::map<std::string, int>::iterator i = dx_list[j].boundarycheck_value.begin(); i != dx_list[j].boundarycheck_value.end(); ++i)
+                    {
+                        // 如果有更小的范围就换成更小的
+                        if (value_map.find(i->first) == value_map.end())
+                        {
+                            value_map[i->first] = i->second;
+                        } else {
+                            if (value_map[i->first] > i->second) {
+                                value_map[i->first] = i->second;
+                            }
+                        }
+                    }
+                }
+                
+                std::vector<Expr> ep_list;
+                std::vector<int> value_list;
+                for (std::map<std::string, int>::iterator i = value_map.begin(); i != value_map.end(); ++i)
+                {
+                    ep_list.push_back(ep_map[i->first]);
+                    value_list.push_back(i->second);
+                }
+                Expr cond_temp, cond1_temp, cond2_temp;
+                cond1_temp = Compare::make(data_type, CompareOpType::LE, Expr(int(0)), ep_list[0]);
+                cond2_temp = Compare::make(data_type, CompareOpType::LT, ep_list[0], Expr(int(value_list[0])));
+                cond_temp = Binary::make(bool_type, BinaryOpType::And, cond1_temp, cond2_temp);
+                for (int i = 1; i < ep_list.size(); ++i)
+                {
+                    cond1_temp = Compare::make(data_type, CompareOpType::LE, Expr(int(0)), ep_list[i]);
+                    cond_temp = Binary::make(bool_type, BinaryOpType::And, cond_temp, cond1_temp);
+                    cond2_temp = Compare::make(data_type, CompareOpType::LT, ep_list[i], Expr(int(value_list[i])));
+                    cond_temp = Binary::make(bool_type, BinaryOpType::And, cond_temp, cond2_temp);
+                }
+
+                // ---------------------上面开始求 求导式子的 bandcheck并生成if里面的条件-----------------------------
+                std::cout << "wrong end" << std::endl;
 
                 // 加上boundarycheck
                 Stmt a;
@@ -916,7 +977,51 @@ public:
 
 
                     // 加上boundarycheck,这里要改一下。
-                    
+                    // ---------------------下面开始求 求导式子的 bandcheck-----------------------------
+                    std::map<std::string, Expr> ep_map;
+                    std::map<std::string, int> value_map;
+                    for(int j = 0;j < dx_list.size();++j)
+                    {
+                        // 合并dx_list中搜集到的所有的节点的bandcheck_list
+                        for (std::map<std::string, Expr>::iterator i = dx_list[j].boundarycheck_list.begin(); i != dx_list[j].boundarycheck_list.end(); ++i)
+                        {
+                            if (ep_map.find(i->first) == ep_map.end())
+                            {
+                                ep_map[i->first] = i->second;
+                            }
+                        }
+                        // 合并dx_list中搜集到的所有的节点的bandcheck_value
+                        for (std::map<std::string, int>::iterator i = dx_list[j].boundarycheck_value.begin(); i != dx_list[j].boundarycheck_value.end(); ++i)
+                        {
+                            // 如果有更小的范围就换成更小的
+                            if (value_map.find(i->first) == value_map.end())
+                            {
+                                value_map[i->first] = i->second;
+                            } else {
+                                if (value_map[i->first] > i->second) {
+                                    value_map[i->first] = i->second;
+                                }
+                            }
+                        }
+                    }
+                    std::vector<Expr> ep_list;
+                    std::vector<int> value_list;
+                    for (std::map<std::string, int>::iterator i = value_map.begin(); i != value_map.end(); ++i)
+                    {
+                        ep_list.push_back(ep_map[i->first]);
+                        value_list.push_back(i->second);
+                    }
+                    Expr cond_temp, cond1_temp, cond2_temp;
+                    cond1_temp = Compare::make(data_type, CompareOpType::LE, Expr(int(0)), ep_list[0]);
+                    cond2_temp = Compare::make(data_type, CompareOpType::LT, ep_list[0], Expr(int(value_list[0])));
+                    cond_temp = Binary::make(bool_type, BinaryOpType::And, cond1_temp, cond2_temp);
+                    for (int i = 1; i < ep_list.size(); ++i)
+                    {
+                        cond1_temp = Compare::make(data_type, CompareOpType::LE, Expr(int(0)), ep_list[i]);
+                        cond_temp = Binary::make(bool_type, BinaryOpType::And, cond_temp, cond1_temp);
+                        cond2_temp = Compare::make(data_type, CompareOpType::LT, ep_list[i], Expr(int(value_list[i])));
+                        cond_temp = Binary::make(bool_type, BinaryOpType::And, cond_temp, cond2_temp);
+                    }
 
                     Stmt a;
                     a = IfThenElse::make(cond_temp, important_body, fake_stmt);
@@ -1300,8 +1405,8 @@ Expr find_dx(AST *RHS){
             }
             if(RHS->child[1].str=="*")
             {
-                dx_list.push_back(&ch1a);
-                dx_list.push_back(&ch2a);
+                dx_list.push_back(ch1a);
+                dx_list.push_back(ch2a);
                 return Binary::make(data_type,BinaryOpType::Add,
                 Binary::make(data_type,BinaryOpType::Mul,find_dx(&ch1a),ch2),Binary::make(data_type, BinaryOpType::Mul,ch1,find_dx(&ch2a)));
             }
@@ -1310,7 +1415,7 @@ Expr find_dx(AST *RHS){
                 std::cout << "/" << std::endl;
                 if(ch2a.t == 3 || ch2a.t == 4 || ch2a.t == 5)
                 {
-                    dx_list.push_back(&ch2a);
+                    dx_list.push_back(ch2a);
                 }
                 return Binary::make(data_type, BinaryOpType::Div,find_dx(&ch1a),ch2);
             }
