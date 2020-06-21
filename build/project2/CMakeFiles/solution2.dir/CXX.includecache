@@ -87,6 +87,8 @@ math.h
 -
 map
 -
+typeinfo
+-
 IR.h
 /mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/solution/IR.h
 IRMutator.h

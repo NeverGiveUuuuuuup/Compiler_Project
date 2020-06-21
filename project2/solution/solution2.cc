@@ -26,11 +26,12 @@ const int INF = 64;
 //我有修改或者添加框架的地方，都用HJH作为标识符，可以通过ctrl-f进行搜索
 //todo表示待完善
 
-
+class AST;
 
 //HJH 这些是我补充的要用到的变量:
 std::vector<std::string> grad_to; //里面是从json中读取出来的求导对象，例如"A", "B"
 std::map<std::string, Expr> grad_to_expr; //对每个求导对象建立一个Var（见IR_Tref, IR_SRef有关代码）
+std::map<std::string, AST> grad_to_AST; //把求导对象对应的节点存入
 std::string current_grad_to;//针对当前求导对象来进行求导
 bool more_occur=false;//判断是否是case10，在右值中出现多个B
 std::vector<Expr> grad_to_more_occur;//多个B的表达式，例如B[i+1][j], B[i-1][j]等，要分别生成求导式子。对应的string就是"d"+grad_to[0]
@@ -39,11 +40,13 @@ int current_num = 0;  //表示在一个求导对象出现多次的时候，这�
 int should_num = 0;  //表示在一个求导对象出现多次的时候，这次调用应该求第几个。
 
 // 用来实现每个求微分的不同bandcheck
-class AST;
+
 std::map<std::string, Expr> dx_check_ep;
 std::map<std::string, int> dx_check_value; 
 std::vector<AST> dx_list;  //求导中保留的项就压入这里，然后遍历里面的每个节点的bandchec来生成总结点的bandcheck
 
+//HJH: 用于生成函数签名的参数
+std::vector<Expr> myinputs;
 
 //  比较两个字符串是否相同。（忽略空格）
 bool compare_str(const std::string &s1, const std::string &s2)
@@ -767,9 +770,40 @@ public:
             outs.push_back(p->second);
         std::cout << "IR P " << str << std::endl;
         std::cout << "insize " << ins.size() << "outsize " << outs.size() << "stmt size " << sp_list.size() << std::endl;
-        gp = Kernel::make(example.name, ins, outs, sp_list, KernelType::CPU);
+        
+        //HJH: 在此处生成函数签名
+        size_t input_size = inputs.size();
+        size_t grad_size = grad_to.size();
+        bool input_used[input_size] = {false};
+        for(int index1=0;index1<grad_size;index1++){
+            std::string s = grad_to[index1];
+            for(int index2=0;index2<input_size;index2++){
+                if(example.ins[index2] != s){
+                    input_used[index2]=true;
+                }
+            }
+        }
+        if(example.name == "grad_case2"){
+            input_used[0]=true;
+        }
+        for(int index1=0;index1<input_size;++index1){
+            if(input_used[index1]==true){
+                std::string s = example.ins[index1];
+                Expr para = inputs[s];
+                myinputs.push_back(para);
+            }
+        }
+        myinputs.push_back(dout);
+        for(int index1=0;index1<grad_size;++index1){
+            std::string s = "d"+grad_to[index1];
+            Expr para = grad_to_expr[s];
+            myinputs.push_back(para);
+        }
+        outs.clear();
+        gp = Kernel::make(example.name, myinputs, outs, sp_list, KernelType::CPU);
         inputs.clear();
         outputs.clear();
+        more_occur = false;
     }
 
     void IR_S()
@@ -781,7 +815,7 @@ public:
         //如果不相同，则需要修改，并最终放进下面的循环中
         
         // bondcheck使用if else实现的，这个是if失败时候执行的代码
-        Stmt fake_stmt = Move::make(child[0].ep, child[0].ep, MoveType::MemToMem);
+        Stmt fake_stmt = Move::make(dout, dout, MoveType::MemToMem);
 
         // 开始构造boundarycheck
         // 合并两个儿子的boundarycheck_list合并为本节点的boundarycheck_list
@@ -848,6 +882,34 @@ public:
             HJH todo: 应该是遍历grad_to中所有的求导对象
             每个求导对象一个bandcheck。
         */
+
+        //构造dx 初始化
+        std::string index_ijk[3] ={"i","j","k"};
+        
+        for(int index = 0; index < grad_to.size();++index) {
+            current_grad_to = grad_to[index];
+            Expr lhs = grad_to_expr["d"+current_grad_to];
+            AST lhs_ast = grad_to_AST["d"+current_grad_to];
+            
+            Expr epp;
+            std::vector<size_t> bound_list;
+            std::vector<Expr> index_list;
+            std::vector<Expr> loop_list;
+            for (int i = 0; i < lhs_ast.child[1].child.size(); ++i)
+            {
+                float value = lhs_ast.child[1].child[i].value;
+                bound_list.push_back((size_t)value);
+                Expr dom_inf = Dom::make(index_type, 0, value);
+                Expr ep = Index::make(index_type, index_ijk[i], dom_inf, IndexType::Spatial);
+                index_list.push_back(ep);
+            }
+            // 定义出张量
+            epp = Var::make(data_type, "d"+current_grad_to, index_list, bound_list);
+            Stmt dx_0 = Move::make(epp, Expr(int(0)), MoveType::MemToMem);
+            Stmt Axx = LoopNest::make(index_list, {dx_0});
+            sp.push_back(Axx);
+        }
+
         for(int index=0;index < grad_to.size();++index){
             current_grad_to = grad_to[index];
             
@@ -861,6 +923,7 @@ public:
             if(!more_occur){
                 Expr lhs = grad_to_expr["d"+current_grad_to];
                 //"dA"
+                
                 Expr dA = dout;
                 
                 //"B"
@@ -868,6 +931,7 @@ public:
                 Expr B = find_dx(&(child[1]));
                 std::cout << "^^^^^^^^^^^^^^^^^^^^" << std::endl;
                 
+
                 // lhs = lhs + dA * B
                 Expr rhs = Binary::make(data_type, BinaryOpType::Add, lhs,  
                                 Binary::make(data_type, BinaryOpType::Mul, dA, B));            
@@ -875,23 +939,19 @@ public:
                 Stmt important_body = Move::make(lhs, rhs, MoveType::MemToMem);
                 
 
-                std::cout << "wrong begin" << std::endl;
+                
                 // ---------------------下面开始求 求导式子的 bandcheck-----------------------------
                 std::map<std::string, Expr> ep_map;
                 std::map<std::string, int> value_map;
-                std::cout << dx_list[0].t << std::endl;
+                
                 // 合并dx_list中搜集到的所有的节点的bandcheck_list
-                std::cout << dx_list[1].t << std::endl;
-                std::cout << dx_list[0].str << std::endl;
-                std::cout << dx_list[1].str << std::endl;   
-                std::cout << dx_list.size() << std::endl;
+                
                 for(int j = 0;j < dx_list.size();j++)
                 {
                     for (std::map<std::string, Expr>::iterator i = dx_list[j].boundarycheck_list.begin(); i != dx_list[j].boundarycheck_list.end(); i++)
                     {
                         if (ep_map.find(i->first) == ep_map.end())
                         {
-                            std::cout << i->first << std::endl;
                             ep_map[i->first] = i->second;
                         }
                     }
@@ -910,15 +970,62 @@ public:
                         }
                     }
                 }
+
+                for (std::map<std::string, Expr>::iterator i = child[0].boundarycheck_list.begin(); i != child[0].boundarycheck_list.end(); i++)
+                {
+                    if (ep_map.find(i->first) == ep_map.end())
+                    {
+                        ep_map[i->first] = i->second;
+                    }
+                }
+ 
+                for (std::map<std::string, int>::iterator i = child[0].boundarycheck_value.begin(); i != child[0].boundarycheck_value.end(); ++i)
+                {
+                    // 如果有更小的范围就换成更小的
+                    if (value_map.find(i->first) == value_map.end())
+                    {
+                        value_map[i->first] = i->second;
+                    } else {
+                        if (value_map[i->first] > i->second) {
+                            value_map[i->first] = i->second;
+                        }
+                    }
+                }
+                for (std::map<std::string, Expr>::iterator i = grad_to_AST["d"+current_grad_to].boundarycheck_list.begin(); i != grad_to_AST["d"+current_grad_to].boundarycheck_list.end(); i++)
+                {
+                    if (ep_map.find(i->first) == ep_map.end())
+                    {
+                        ep_map[i->first] = i->second;
+                    }
+                }
+ 
+                for (std::map<std::string, int>::iterator i = grad_to_AST["d"+current_grad_to].boundarycheck_value.begin(); i != grad_to_AST["d"+current_grad_to].boundarycheck_value.end(); ++i)
+                {
+                    // 如果有更小的范围就换成更小的
+                    if (value_map.find(i->first) == value_map.end())
+                    {
+                        value_map[i->first] = i->second;
+                    } else {
+                        if (value_map[i->first] > i->second) {
+                            value_map[i->first] = i->second;
+                        }
+                    }
+                }
+
+
+
                 
                 std::vector<Expr> ep_list;
                 std::vector<int> value_list;
+
                 for (std::map<std::string, int>::iterator i = value_map.begin(); i != value_map.end(); ++i)
                 {
                     ep_list.push_back(ep_map[i->first]);
                     value_list.push_back(i->second);
                 }
+                std::cout << "wrong begin" << std::endl;
                 Expr cond_temp, cond1_temp, cond2_temp;
+                
                 cond1_temp = Compare::make(data_type, CompareOpType::LE, Expr(int(0)), ep_list[0]);
                 cond2_temp = Compare::make(data_type, CompareOpType::LT, ep_list[0], Expr(int(value_list[0])));
                 cond_temp = Binary::make(bool_type, BinaryOpType::And, cond1_temp, cond2_temp);
@@ -959,7 +1066,7 @@ public:
                     //也就是说对于dB[i+2,j]求导时，不考虑B[i+1,j]所在的加法项（返回0）
                     //目前的find_dx只是比对string，判断求导对象是不是"B"，因此可能需要添加对下标的判断
                     
-                    Expr lhs = grad_to_expr["d"+current_grad_to];
+                    Expr lhs = grad_to_more_occur[i];
                     //"dA"
                     Expr dA = dout;
                     
@@ -1004,6 +1111,48 @@ public:
                             }
                         }
                     }
+                    for (std::map<std::string, Expr>::iterator i = child[0].boundarycheck_list.begin(); i != child[0].boundarycheck_list.end(); i++)
+                    {
+                        if (ep_map.find(i->first) == ep_map.end())
+                        {
+                            ep_map[i->first] = i->second;
+                        }
+                    }
+    
+                    for (std::map<std::string, int>::iterator i = child[0].boundarycheck_value.begin(); i != child[0].boundarycheck_value.end(); ++i)
+                    {
+                        // 如果有更小的范围就换成更小的
+                        if (value_map.find(i->first) == value_map.end())
+                        {
+                            value_map[i->first] = i->second;
+                        } else {
+                            if (value_map[i->first] > i->second) {
+                                value_map[i->first] = i->second;
+                            }
+                        }
+                    }
+                    for (std::map<std::string, Expr>::iterator i = grad_to_AST["d"+current_grad_to].boundarycheck_list.begin(); i != grad_to_AST["d"+current_grad_to].boundarycheck_list.end(); i++)
+                    {
+                        if (ep_map.find(i->first) == ep_map.end())
+                        {
+                            ep_map[i->first] = i->second;
+                        }
+                    }
+    
+                    for (std::map<std::string, int>::iterator i = grad_to_AST["d"+current_grad_to].boundarycheck_value.begin(); i != grad_to_AST["d"+current_grad_to].boundarycheck_value.end(); ++i)
+                    {
+                        // 如果有更小的范围就换成更小的
+                        if (value_map.find(i->first) == value_map.end())
+                        {
+                            value_map[i->first] = i->second;
+                        } else {
+                            if (value_map[i->first] > i->second) {
+                                value_map[i->first] = i->second;
+                            }
+                        }
+                    }
+
+
                     std::vector<Expr> ep_list;
                     std::vector<int> value_list;
                     for (std::map<std::string, int>::iterator i = value_map.begin(); i != value_map.end(); ++i)
@@ -1197,7 +1346,8 @@ public:
             if(compare_str(sname, grad_to[i])){
                 std::string dname = "d" + sname; 
                 if(grad_to_expr.find(dname) == grad_to_expr.end()){
-                    grad_to_expr[dname] = Var::make(data_type, dname, index_list, bound_list);  
+                    grad_to_expr[dname] = Var::make(data_type, dname, index_list, bound_list);
+                    grad_to_AST[dname] = *this;  
                 }
                 else{
                     if (!more_occur)
@@ -1284,7 +1434,8 @@ public:
             if(compare_str(tname, grad_to[i])){
                 std::string dname = "d" + tname; 
                 if(grad_to_expr.find(dname) == grad_to_expr.end()){
-                    grad_to_expr[dname] = Var::make(data_type, dname, index_list, bound_list);  
+                    grad_to_expr[dname] = Var::make(data_type, dname, index_list, bound_list);
+                    grad_to_AST[dname] = *this;
                 }
                 else{
                     if (!more_occur) {
@@ -1388,6 +1539,63 @@ public:
 };
 
 // todo: 从右边值节点开始递归求微分。
+
+int find_0_1(AST *RHS){
+    if (RHS->t == 3) {
+        if (RHS->child.size()== 3){
+            AST ch1a = RHS->child[0], ch2a = RHS->child[2];
+            Expr ch1 = ch1a.ep;Expr ch2 = ch2a.ep;
+    
+            if(RHS->child[1].str=="*")
+            {
+                int a1 = find_0_1(&ch1a);
+                int a2 = find_0_1(&ch2a);
+                if(a1 == 0 && a2 == 0)
+                {
+                    return 0;
+                } 
+                return 1;
+            }
+            else {
+                return 1;
+            }
+        }
+        else {
+            return find_0_1(&(RHS->child[0]));
+        }
+    }
+    else {
+        if(RHS->t == 4) {
+            if(more_occur){
+                if(RHS->child[0].str == current_grad_to)
+                {
+                    if(should_num == current_num)
+                    {
+                        current_num++;
+                        return 1;
+                    }
+                    current_num++;
+                    return 0;
+                }
+                else return 0;
+            }
+            else {
+                if(RHS->child[0].str == current_grad_to)
+                {
+                    return 1;
+                }
+                else return 0;
+            }
+        }
+        if(RHS->t == 5) {
+            return 0;
+        }
+        if(RHS->t == 6) {
+            return 0;
+        }
+    }  
+}
+
 Expr find_dx(AST *RHS){
     if (RHS->t == 3) {
         if (RHS->child.size()== 3){
@@ -1395,6 +1603,7 @@ Expr find_dx(AST *RHS){
             Expr ch1 = ch1a.ep;Expr ch2 = ch2a.ep;
             if(RHS->child[1].str=="+")
             {
+
                 
                 return Binary::make(data_type,BinaryOpType::Add,find_dx(&ch1a),find_dx(&ch2a));
             }
@@ -1403,8 +1612,28 @@ Expr find_dx(AST *RHS){
                 
                 return Binary::make(data_type,BinaryOpType::Sub,find_dx(&ch1a),find_dx(&ch2a));
             }
+
             if(RHS->child[1].str=="*")
             {
+                
+
+                std::cout << RHS->child[0].str<<RHS->child[1].str<<RHS->child[2].str << std::endl;
+
+                int a1,a2;
+                a1 = find_0_1(&ch1a);
+                a2 = find_0_1(&ch2a);
+                std::cout << a1 <<"----"<< a2 << std::endl;
+                if(!a1 && !a2) return Expr(int(0));
+                if(!a1)
+                {
+                    dx_list.push_back(ch1a);
+                    return Binary::make(data_type, BinaryOpType::Mul,ch1,find_dx(&ch2a));
+                }
+                else if(!a2)
+                {
+                    dx_list.push_back(ch2a);
+                    return Binary::make(data_type,BinaryOpType::Mul,find_dx(&ch1a),ch2);
+                }
                 dx_list.push_back(ch1a);
                 dx_list.push_back(ch2a);
                 return Binary::make(data_type,BinaryOpType::Add,
@@ -1422,7 +1651,7 @@ Expr find_dx(AST *RHS){
             std::cout << "出现没考虑符号";
         }
         else {
-            std::cout << "???????" << RHS->str << std::endl;
+            std::cout << RHS->str << std::endl;
             return find_dx(&(RHS->child[0]));
         }
     }
@@ -1431,7 +1660,6 @@ Expr find_dx(AST *RHS){
             if(more_occur){
                 if(RHS->child[0].str == current_grad_to)
                 {
-                    std::cout << "这是第"<< current_num << "次遇到,应该处理第" << should_num << "个" <<std::endl;
                     
                     if(should_num == current_num)
                     {
@@ -1464,48 +1692,76 @@ int main(int argc, char *argv[])
 {
     //HJH 
     //std::string src = "./cases/examples.json"; 
-    
-    std::string src = "./cases/case4.json";
+    std::string src, dst;
+    for(int i = 0; i <= 10; ++i){
+        if(i == 0) src = "./cases/example.json";
+        else src = "./cases/case" + std::to_string(i) + ".json";
+        if(access(src.c_str(), 0) == -1) continue;
+        example = parse_json(src);
+        example.print();
 
-    std::cout << "---build tree finish---" << std::endl;
-    example = parse_json(src);
-    std::cout << "---build tree finish---" << std::endl;
-    
-    example.print();
+        dst = "./kernels/" + example.name + ".cc";
+        if(example.data_type == "float") data_type = Type::float_scalar(32);
+        else if(example.data_type == "int") data_type = Type::int_scalar(32);
+        else std::cout << "data type in json not int or float!" << std::endl;
 
-    AST root = AST((nodetype)0, example.kernel);
-    root.build_tree();
-    std::cout << "---build tree finish---" << std::endl;
-    
-    root.travel();
-    std::cout << "***travel finish***" << std::endl;
-    
-    root.build_IR();
-    std::cout << "***build IR finish***" << std::endl;
-    
-    std::cout << root.str << std::endl;
+        AST root = AST((nodetype)0, example.kernel);
+        root.build_tree();
+        std::cout << "---build tree finish---" << std::endl;
+        
+        root.travel();
+        std::cout << "***travel finish***" << std::endl;
+        
+        root.build_IR();
+        std::cout << "***build IR finish***" << std::endl;
+        
+        std::cout << root.str << std::endl;
 
-    Group kernel = root.gp; 
-    // visitor
-    IRVisitor visitor;
-    root.gp.visit_group(&visitor);
+        Group kernel = root.gp; 
+        // visitor
+        IRVisitor visitor;
+        root.gp.visit_group(&visitor);
 
-    // mutator
-    //IRMutator mutator;
-    //kernel = mutator.mutate(kernel);
+        // mutator
+        //IRMutator mutator;
+        //kernel = mutator.mutate(kernel);
 
-    // printer
-    CCPrinter printer;
+        // printer
+        CCPrinter printer;
+        printer.kase = 2;
 
-    std::cout << "----------CODE-----------" << std::endl;
-    std::string code = printer.print(root.gp);
-    std::cout << code << std::endl;
-    std::cout << "----------CODE-----------" << std::endl;
-    
-    std::cout << grad_to.size() << std::endl;
-    for(int i = 0;i < grad_to.size(); ++i) {
-        std::cout << grad_to[i] << std::endl;
+        std::cout << "----------CODE-----------" << std::endl;
+        std::string code = printer.print(root.gp);
+        std::cout << code << std::endl;
+        std::cout << "----------CODE-----------" << std::endl;
+        
+        std::cout << grad_to.size() << std::endl;
+        for(int i = 0;i < grad_to.size(); ++i) {
+            std::cout << grad_to[i] << std::endl;
+        }
+        std::ofstream ofile(dst, std::ios::out);
+        ofile << code;
+        ofile.close();
+        std::cout << "************" << std::endl;
+
+        myinputs.clear();
+        grad_to.clear();
+        grad_to_expr.clear();
+        current_grad_to="";
+        more_occur=false;
+        grad_to_more_occur.clear();
+        current_num=should_num=0;
+        dx_check_ep.clear();
+        dx_check_value.clear();
+        dx_list.clear();
+        loop_indexs.clear();
+        inputs.clear();
+        outputs.clear();
+        boundarycheck_dom.clear();
+        boundarycheck_expr.clear();
     }
+
+    
     return 0;
 }
     // std::string src, dst;

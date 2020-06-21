@@ -10,6 +10,7 @@
 #include <cstring>
 #include <vector>
 #include <algorithm>
+#include <iostream>
 
 #include "IRPrinter.h"
 #include "IRVisitor.h"
@@ -18,10 +19,9 @@ namespace Boost {
 
     namespace Internal {
 
-        class CCPrinter : public IRVisitor {
+        class CCPrinter2 : public IRVisitor {
         public:
-            int kase=1;
-            CCPrinter() : IRVisitor() {
+            CCPrinter2() : IRVisitor() {
                 indent = 0;
                 print_range = false;
                 print_arg = false;
@@ -31,8 +31,11 @@ namespace Boost {
             std::string print(const Group&);
 
             void print_indent() {
-                for (int i = 0; i < indent; ++i)
+                for (int i = 0; i < indent; ++i){
                     oss << " ";
+                    std::cout << " ";
+                }
+                    
             }
 
             void enter() {
