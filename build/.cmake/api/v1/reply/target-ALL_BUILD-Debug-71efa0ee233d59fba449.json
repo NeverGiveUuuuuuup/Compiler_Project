@@ -1,0 +1,63 @@
+{
+	"backtrace" : 0,
+	"backtraceGraph" : 
+	{
+		"commands" : [],
+		"files" : 
+		[
+			"CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			}
+		]
+	},
+	"dependencies" : 
+	[
+		{
+			"id" : "boost::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "solution2::@a4f1d5ad0e0f30f3d4b9"
+		},
+		{
+			"id" : "cleanf2::@a4f1d5ad0e0f30f3d4b9"
+		},
+		{
+			"id" : "ZERO_CHECK::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "conv2d::@36f028580bb02cc8272a"
+		},
+		{
+			"id" : "ir_mutator::@36f028580bb02cc8272a"
+		},
+		{
+			"id" : "test1::@0dfe21ecce98823e3855"
+		},
+		{
+			"id" : "solution::@0dfe21ecce98823e3855"
+		},
+		{
+			"id" : "cleanf::@0dfe21ecce98823e3855"
+		},
+		{
+			"id" : "test2::@a4f1d5ad0e0f30f3d4b9"
+		},
+		{
+			"id" : "gemm::@36f028580bb02cc8272a"
+		}
+	],
+	"id" : "ALL_BUILD::@6890427a1f51a3e7e1df",
+	"isGeneratorProvided" : true,
+	"name" : "ALL_BUILD",
+	"paths" : 
+	{
+		"build" : ".",
+		"source" : "."
+	},
+	"sources" : [],
+	"type" : "UTILITY"
+}
