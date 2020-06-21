@@ -35,9 +35,12 @@ std::map<std::string, AST> grad_to_AST; //把求导对象对应的节点存入
 std::string current_grad_to;//针对当前求导对象来进行求导
 bool more_occur=false;//判断是否是case10，在右值中出现多个B
 std::vector<Expr> grad_to_more_occur;//多个B的表达式，例如B[i+1][j], B[i-1][j]等，要分别生成求导式子。对应的string就是"d"+grad_to[0]
+std::vector<AST> grad_AST_to_more_occur;
 Expr dout;//对输出对象的求导
 int current_num = 0;  //表示在一个求导对象出现多次的时候，这次访问的是第几次。
+int current_num_plus = 0; //给去掉*0用的
 int should_num = 0;  //表示在一个求导对象出现多次的时候，这次调用应该求第几个。
+int temp_num = 0;
 
 // 用来实现每个求微分的不同bandcheck
 
@@ -808,6 +811,7 @@ public:
 
     void IR_S()
     {
+        
         //循环内部的东西放入body_list中
         std::vector<Stmt> body_list;
 
@@ -859,6 +863,8 @@ public:
             }
         }
         
+        
+
         std::vector<Expr> ep_list;
         std::vector<int> value_list;
         for (std::map<std::string, int>::iterator i = boundarycheck_value.begin(); i != boundarycheck_value.end(); ++i)
@@ -883,21 +889,25 @@ public:
             每个求导对象一个bandcheck。
         */
 
+       
         //构造dx 初始化
-        std::string index_ijk[3] ={"i","j","k"};
-        
+        std::string index_ijk[4] ={"i","j","k","l"};
+        std::cout << grad_to.size() << std::endl;
         for(int index = 0; index < grad_to.size();++index) {
             current_grad_to = grad_to[index];
+            std::cout << current_grad_to << std::endl;
             Expr lhs = grad_to_expr["d"+current_grad_to];
             AST lhs_ast = grad_to_AST["d"+current_grad_to];
+
             
             Expr epp;
             std::vector<size_t> bound_list;
             std::vector<Expr> index_list;
             std::vector<Expr> loop_list;
+            std::cout << lhs_ast.child[1].child.size() << std::endl;
             for (int i = 0; i < lhs_ast.child[1].child.size(); ++i)
             {
-                float value = lhs_ast.child[1].child[i].value;
+                int value = (int)(lhs_ast.child[1].child[i].value);
                 bound_list.push_back((size_t)value);
                 Expr dom_inf = Dom::make(index_type, 0, value);
                 Expr ep = Index::make(index_type, index_ijk[i], dom_inf, IndexType::Spatial);
@@ -909,6 +919,8 @@ public:
             Stmt Axx = LoopNest::make(index_list, {dx_0});
             sp.push_back(Axx);
         }
+        
+        
 
         for(int index=0;index < grad_to.size();++index){
             current_grad_to = grad_to[index];
@@ -922,8 +934,42 @@ public:
             
             if(!more_occur){
                 Expr lhs = grad_to_expr["d"+current_grad_to];
+                AST lhs_AST = grad_to_AST["d"+current_grad_to];
                 //"dA"
+                std::vector<Expr> xx_index_list;//生成dx的ALIST参数
+                std::string temp_name[4] = {"temp1","temp2","temp3","temp4"};
+                std::cout << lhs_AST.str << std::endl;
+                std::cout << lhs_AST.t << std::endl;
+                // 定义出张量
+                for(int m = 0;m < lhs_AST.child[2].child.size();++m) {
+                    std::cout << lhs_AST.child[2].child[m].str << std::endl;
+                    if(lhs_AST.child[2].child[m].child.size() == 3)
+                    {
+                        //定义temp i 
+                        Expr mm_ep = Var::make(data_type, temp_name[temp_num++], {}, {(int)1});
+                        //tempi = i + j
+                        Stmt temp_stmt = Move::make(mm_ep, lhs_AST.child[2].child[m].ep, MoveType::MemToMem);
+                        body_list.push_back(temp_stmt);
+                        xx_index_list.push_back(mm_ep);
+                    }
+                    else {
+                        xx_index_list.push_back(lhs_AST.child[2].child[m].ep);
+                    }
+                }
+                std::vector<size_t> xx_bound_list;
+                for(int m = 0;m < lhs_AST.child[1].child.size();++m) {
+                    xx_bound_list.push_back(lhs_AST.child[1].child[m].value);
+                }
+
+
+                lhs = Var::make(data_type, "d"+current_grad_to, xx_index_list, xx_bound_list);
+
+
                 
+
+
+
+
                 Expr dA = dout;
                 
                 //"B"
@@ -931,6 +977,9 @@ public:
                 Expr B = find_dx(&(child[1]));
                 std::cout << "^^^^^^^^^^^^^^^^^^^^" << std::endl;
                 
+
+
+
 
                 // lhs = lhs + dA * B
                 Expr rhs = Binary::make(data_type, BinaryOpType::Add, lhs,  
@@ -1060,21 +1109,58 @@ public:
                     dB<10, 8>[i+2, j] = dB<10, 8>[i+2, j] + dA<8, 8>[i,j] / 3.0;
                 }
                 */
+               
                 should_num = 0;
                 for(int i=0;i<grad_to_more_occur.size();i++){
                     //注意：不能直接调用find_dx，对于乘法可以照旧，但是加法需要确认是不是当前的索引
                     //也就是说对于dB[i+2,j]求导时，不考虑B[i+1,j]所在的加法项（返回0）
                     //目前的find_dx只是比对string，判断求导对象是不是"B"，因此可能需要添加对下标的判断
-                    
+                    std::cout << "-----------I am wrong end------------" << std::endl;
                     Expr lhs = grad_to_more_occur[i];
+                    std::cout << "-----------I am wrong end------------" << std::endl;
+                    AST lhs_AST = grad_AST_to_more_occur[i];
                     //"dA"
+                    std::cout << "-----------I am wrong end------------" << std::endl;
+
+                    std::vector<Expr> xx_index_list;//生成dx的ALIST参数
+                    std::string temp_name[4] = {"temp1","temp2","temp3","temp4"};
+                    std::cout << lhs_AST.str << std::endl;
+                    std::cout << lhs_AST.t << std::endl;
+                    // 定义出张量
+                    
+                    for(int m = 0;m < lhs_AST.child[2].child.size();++m) {
+                        std::cout << lhs_AST.child[2].child[m].str << std::endl;
+                        if(lhs_AST.child[2].child[m].child.size() == 3)
+                        {
+                            //定义temp i 
+                            Expr mm_ep = Var::make(data_type, temp_name[temp_num++], {}, {(int)1});
+                            //tempi = i + j
+                            Stmt temp_stmt = Move::make(mm_ep, lhs_AST.child[2].child[m].ep, MoveType::MemToMem);
+                            body_list.push_back(temp_stmt);
+                            xx_index_list.push_back(mm_ep);
+                        }
+                        else {
+                            xx_index_list.push_back(lhs_AST.child[2].child[m].ep);
+                        }
+                    }
+                    std::vector<size_t> xx_bound_list;
+                    for(int m = 0;m < lhs_AST.child[1].child.size();++m) {
+                        xx_bound_list.push_back(lhs_AST.child[1].child[m].value);
+                    }
+
+
+                    lhs = Var::make(data_type, "d"+current_grad_to, xx_index_list, xx_bound_list);
+
                     Expr dA = dout;
                     
                     //"B"
                     std::cout << "^^^^^^^^^^^^^^^^^^^^" << std::endl;
+                    
                     current_num = 0;
+                    current_num_plus = 0;
                     Expr B = find_dx(&(child[1]));
                     should_num++;
+                    std::cout << "?" << current_num << std::endl;
                     std::cout << "^^^^^^^^^^^^^^^^^^^^" << std::endl;
                     
                     // lhs = lhs + dA * B
@@ -1180,7 +1266,8 @@ public:
                 }
             }
 
-            //HJH    
+        }
+        //HJH    
             std::vector<Expr> loop_indexs_vec;
             for (std::map<std::string, Expr>::iterator i = loop_indexs.begin(); i != loop_indexs.end(); ++i)
             {
@@ -1189,8 +1276,6 @@ public:
             Stmt A = LoopNest::make(loop_indexs_vec, body_list);
             sp.push_back(A);
             dx_list.clear();
-        }
-        
         //-------------------
         //std::cout << "loop index in S " << tmp.size() << std::endl;
         //sp = LoopNest::make(tmp, {main_stmt});
@@ -1354,8 +1439,10 @@ public:
                     {
                         more_occur = true;//case 10!
                         grad_to_more_occur.push_back(grad_to_expr[dname]);
+                        grad_AST_to_more_occur.push_back(grad_to_AST[dname]);
                     }
                     grad_to_more_occur.push_back(Var::make(data_type, dname, index_list, bound_list));
+                    grad_AST_to_more_occur.push_back(*this);
                 }
                 break;
             }
@@ -1441,8 +1528,10 @@ public:
                     if (!more_occur) {
                         more_occur = true;//case 10!
                         grad_to_more_occur.push_back(grad_to_expr[dname]);
+                        grad_AST_to_more_occur.push_back(grad_to_AST[dname]);
                     }
                     grad_to_more_occur.push_back(Var::make(data_type, dname, index_list, bound_list));
+                    grad_AST_to_more_occur.push_back(*this);
                     break;
                 }
             }
@@ -1569,12 +1658,12 @@ int find_0_1(AST *RHS){
             if(more_occur){
                 if(RHS->child[0].str == current_grad_to)
                 {
-                    if(should_num == current_num)
+                    if(should_num == current_num_plus)
                     {
-                        current_num++;
+                        current_num_plus++;
                         return 1;
                     }
-                    current_num++;
+                    current_num_plus++;
                     return 0;
                 }
                 else return 0;
@@ -1622,22 +1711,24 @@ Expr find_dx(AST *RHS){
                 int a1,a2;
                 a1 = find_0_1(&ch1a);
                 a2 = find_0_1(&ch2a);
-                std::cout << a1 <<"----"<< a2 << std::endl;
+                std::cout << a1 <<"----"<< a2 << std::endl; 
+                Expr xx1 = find_dx(&ch1a);
+                Expr xx2 = find_dx(&ch2a);
                 if(!a1 && !a2) return Expr(int(0));
                 if(!a1)
                 {
                     dx_list.push_back(ch1a);
-                    return Binary::make(data_type, BinaryOpType::Mul,ch1,find_dx(&ch2a));
+                    return Binary::make(data_type, BinaryOpType::Mul,ch1,xx2);
                 }
                 else if(!a2)
                 {
                     dx_list.push_back(ch2a);
-                    return Binary::make(data_type,BinaryOpType::Mul,find_dx(&ch1a),ch2);
+                    return Binary::make(data_type,BinaryOpType::Mul, xx1, ch2);
                 }
                 dx_list.push_back(ch1a);
                 dx_list.push_back(ch2a);
                 return Binary::make(data_type,BinaryOpType::Add,
-                Binary::make(data_type,BinaryOpType::Mul,find_dx(&ch1a),ch2),Binary::make(data_type, BinaryOpType::Mul,ch1,find_dx(&ch2a)));
+                Binary::make(data_type,BinaryOpType::Mul,xx1,ch2),Binary::make(data_type, BinaryOpType::Mul,ch1,xx2));
             }
             if(RHS->child[1].str=="/")
             {
@@ -1657,12 +1748,17 @@ Expr find_dx(AST *RHS){
     }
     else {
         if(RHS->t == 4) {
+            std::cout << "oooooooooooooo" << std::endl;
+            std::cout << current_grad_to << std::endl;
+            std::cout << should_num << std::endl;
+            std::cout << current_num << std::endl;
             if(more_occur){
                 if(RHS->child[0].str == current_grad_to)
                 {
                     
                     if(should_num == current_num)
                     {
+                        
                         current_num++;
                         return Expr(int(1));
                     }
@@ -1706,12 +1802,14 @@ int main(int argc, char *argv[])
         else std::cout << "data type in json not int or float!" << std::endl;
 
         AST root = AST((nodetype)0, example.kernel);
+        std::cout << "---build tree begin---" << std::endl;
         root.build_tree();
         std::cout << "---build tree finish---" << std::endl;
         
         root.travel();
         std::cout << "***travel finish***" << std::endl;
         
+        std::cout << "-----------build IR begin-----------" << std::endl;
         root.build_IR();
         std::cout << "***build IR finish***" << std::endl;
         
@@ -1729,7 +1827,7 @@ int main(int argc, char *argv[])
         // printer
         CCPrinter printer;
         printer.kase = 2;
-
+        printer.temp_num = temp_num;
         std::cout << "----------CODE-----------" << std::endl;
         std::string code = printer.print(root.gp);
         std::cout << code << std::endl;
@@ -1747,10 +1845,14 @@ int main(int argc, char *argv[])
         myinputs.clear();
         grad_to.clear();
         grad_to_expr.clear();
+        grad_to_AST.clear();
         current_grad_to="";
         more_occur=false;
         grad_to_more_occur.clear();
         current_num=should_num=0;
+        current_num_plus = 0;
+        temp_num = 0;
+        grad_AST_to_more_occur.clear();
         dx_check_ep.clear();
         dx_check_value.clear();
         dx_list.clear();
@@ -1764,51 +1866,4 @@ int main(int argc, char *argv[])
     
     return 0;
 }
-    // std::string src, dst;
-    // for (int i = 0; i <= 10; ++i)
-    // {
-    //     if (i == 0)
-    //         src = "./cases/example.json";
-    //     else
-    //         src = "./cases/case" + std::to_string(i) + ".json";
-    //     if (access(src.c_str(), 0) == -1)
-    //         continue;
-    //     example = parse_json(src);
-    //     example.print();
-
-    //     dst = "./kernels/" + example.name + ".cc";
-    //     if (example.data_type == "float")
-    //         data_type = Type::float_scalar(32);
-    //     else if (example.data_type == "int")
-    //         data_type = Type::int_scalar(32);
-    //     else
-    //         std::cout << "data type in json not int or float!" << std::endl;
-
-    //     AST root = AST((nodetype)0, example.kernel);
-    //     root.build_tree();
-    //     std::cout << "-----" << std::endl;
-    //     root.travel();
-    //     std::cout << "*****" << std::endl;
-    //     root.build_IR();
-
-    //     std::cout << root.str << std::endl;
-
-    //     Group kernel = root.gp;
-
-    //     // visitor
-    //     IRVisitor visitor;
-    //     root.gp.visit_group(&visitor);
-
-    //     // mutator
-    //     //IRMutator mutator;
-    //     //kernel = mutator.mutate(kernel);
-
-    //     // printer
-    //     CCPrinter printer;
-    //     std::string code = printer.print(root.gp);
-    //     std::ofstream ofile(dst, std::ios::out);
-    //     ofile << code;
-    //     ofile.close();
-    //     std::cout << "************" << std::endl;
-    // }
 

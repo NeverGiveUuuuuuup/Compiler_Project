@@ -32,20 +32,18 @@ namespace Boost {
 
 
         void CCPrinter::visit(Ref<const IntImm> op) {
-            //oss << "(" << op->type() << " " << op->value() << ")";
             oss << op->value();
         }
 
 
         void CCPrinter::visit(Ref<const UIntImm> op) {
-            //oss << "(" << op->type() << " " << op->value() << ")";
             oss << op->value();
         }
 
 
         void CCPrinter::visit(Ref<const FloatImm> op) {
             //oss << "(" << op->type() << " " << op->value() << ")";
-            oss << op->value();
+            oss << "(float)" <<op->value()<<"";
         }
 
         // never used in hw1
@@ -295,11 +293,34 @@ namespace Boost {
 
 
         void CCPrinter::declaretemp(Ref<const Kernel> op){
+            std::cout<<"temp_num is "<<temp_num<<std::endl;
             print_indent();
-            //note!!
-            //premise: outputs isn't empty
+            if(op->outputs.size()==0 &&op->inputs.size()==0){
+                oss<<"\n";
+                return;
+            }
+
             if(op->outputs.size()==0){
-                std::cout << "CCPrinter error: output is empty!!!"<<std::endl;
+                if(temp_num==0) return;
+                
+                /*
+                const Var* input =
+                    static_cast<const Var*>((op->inputs[0]).get());
+                if(input->type().is_int()){
+                    
+                }
+                else{
+                    oss << "float";
+                }
+                */
+                oss << "int";
+                for(int i=1;i<=temp_num;++i){
+                    if(i>1){
+                        oss<<",";
+                    }
+                    oss<<" temp"<<i;
+                }
+                oss<<";\n";
                 return;
             }
             const Var* output =

@@ -20,7 +20,10 @@ namespace Boost {
 
         class CCPrinter : public IRVisitor {
         public:
-            int kase=1;
+            int kase=1; 
+            //说明：这里可不是打表哦，kase只会取1或者2，表示是project1还是project2，
+            //      用于决定incluede的文件是run.h还是run2.h
+            int temp_num=0;
             CCPrinter() : IRVisitor() {
                 indent = 0;
                 print_range = false;

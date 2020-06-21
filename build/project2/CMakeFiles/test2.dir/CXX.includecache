@@ -7,44 +7,44 @@
 #IncludeRegexTransform: 
 
 /mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/kernels/grad_case1.cc
-../run.h
-/mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/run.h
+../run2.h
+/mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/run2.h
 
 /mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/kernels/grad_case10.cc
-../run.h
-/mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/run.h
+../run2.h
+/mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/run2.h
 
 /mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/kernels/grad_case2.cc
-../run.h
-/mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/run.h
+../run2.h
+/mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/run2.h
 
 /mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/kernels/grad_case3.cc
-../run.h
-/mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/run.h
+../run2.h
+/mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/run2.h
 
 /mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/kernels/grad_case4.cc
-../run.h
-/mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/run.h
+../run2.h
+/mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/run2.h
 
 /mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/kernels/grad_case5.cc
-../run.h
-/mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/run.h
+../run2.h
+/mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/run2.h
 
 /mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/kernels/grad_case6.cc
-../run.h
-/mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/run.h
+../run2.h
+/mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/run2.h
 
 /mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/kernels/grad_case7.cc
-../run.h
-/mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/run.h
+../run2.h
+/mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/run2.h
 
 /mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/kernels/grad_case8.cc
-../run.h
-/mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/run.h
+../run2.h
+/mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/run2.h
 
 /mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/kernels/grad_case9.cc
-../run.h
-/mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/run.h
+../run2.h
+/mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/run2.h
 
 /mnt/d/codes/CompilerLab/Compiler_Project/CompilerProject-2020Spring/project2/run2.cc
 iostream
