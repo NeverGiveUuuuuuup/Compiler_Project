@@ -1,1 +1,0 @@
-/usr/bin/c++  -std=c++11 -faligned-new -O2 -Wall -fPIC   -rdynamic CMakeFiles/cleanf2.dir/clean/clean2.cc.o  -o cleanf2 
